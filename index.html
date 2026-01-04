@@ -181,6 +181,48 @@
             color: var(--text-color);
         }
 
+        .collapsible .panel-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .collapsible .panel-header h2 {
+            margin: 0;
+            font-size: 18px;
+            color: var(--heading-main);
+        }
+
+        .collapsible .panel-body {
+            margin-top: 12px;
+        }
+
+        .collapse-btn {
+            background: transparent;
+            border: 1px solid var(--border-color);
+            color: var(--text-color);
+            border-radius: 50%;
+            width: 28px;
+            height: 28px;
+            font-size: 16px;
+            line-height: 1;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .collapse-btn:hover {
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        .collapsible.collapsed .panel-body {
+            display: none;
+        }
+
+        .collapsible.collapsed {
+            opacity: 0.85;
+        }
+
         .tour-controls button {
             background: #9C27B0;
             color: white;
@@ -250,6 +292,34 @@
             color: var(--text-color);
         }
 
+        .render-indicator {
+            position: absolute;
+            top: 70px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: var(--panel-bg);
+            padding: 8px 18px;
+            border-radius: 5px;
+            border: 1px solid var(--border-color);
+            font-size: 12px;
+            backdrop-filter: blur(10px);
+            color: var(--text-color);
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .render-indicator .dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: #4CAF50;
+        }
+
+        .render-indicator.canvas .dot {
+            background: #FF9800;
+        }
+
         select {
             background: var(--bg-color);
             color: var(--text-color);
@@ -275,7 +345,8 @@
             .info-panel,
             .tour-controls,
             .coordinates,
-            .zoom-indicator {
+            .zoom-indicator,
+            .render-indicator {
                 position: static;
                 width: 100%;
                 max-width: none;
@@ -304,7 +375,8 @@
             }
 
             .coordinates,
-            .zoom-indicator {
+            .zoom-indicator,
+            .render-indicator {
                 text-align: center;
             }
         }
@@ -327,101 +399,107 @@
     <body data-theme="light">
     <canvas id="canvas"></canvas>
     
-    <div class="controls">
-        <h2>Mandelbrot Controls</h2>
-        
-        <div class="control-group">
-            <label for="iterations">Base Iterations: <span id="iterValue">100</span></label>
-            <input type="range" id="iterations" min="50" max="1000" value="100" step="10">
-            <label style="display: flex; align-items: center; gap: 5px; margin-top: 5px; cursor: pointer;">
-                <input type="checkbox" id="adaptiveToggle" checked> Adaptive Iterations
-            </label>
+    <div class="controls collapsible" id="controlsPanel">
+        <div class="panel-header">
+            <h2>Mandelbrot Controls</h2>
+            <button class="collapse-btn" data-target="controlsPanel" aria-expanded="true" aria-label="Toggle controls">−</button>
         </div>
-        
-        <div class="control-group">
-            <label for="theme">Theme:</label>
-            <select id="theme">
-                <option value="light" selected>Light</option>
-                <option value="dark">Dark</option>
-                <option value="eink">E-ink</option>
-            </select>
-        </div>
-
-        <div class="control-group">
-            <label for="fractalType">Fractal Type:</label>
-            <select id="fractalType">
-                <option value="mandelbrot">Mandelbrot</option>
-                <option value="burningship">Burning Ship</option>
-            </select>
-        </div>
-        
-        <div class="control-group">
-            <label for="colorScheme">Color Scheme:</label>
-            <select id="colorScheme">
-                <option value="classic">Classic</option>
-                <option value="fire">Fire</option>
-                <option value="ocean">Ocean</option>
-                <option value="psychedelic">Psychedelic</option>
-            </select>
-        </div>
-        
-        <div class="control-group">
-            <button id="reset">Reset View</button>
-            <button id="screenshot">Save Image</button>
-        </div>
-        
-        <div class="control-group">
-            <label>Navigation:</label>
-            <p style="font-size: 11px; color: #999;">
-                • Click to zoom in<br>
-                • Right-click to zoom out<br>
-                • Drag to pan<br>
-                • Mouse wheel to zoom
-            </p>
-        </div>
-    </div>
-    
-    <div class="info-panel">
-        <h2>The Mandelbrot Set</h2>
-        
-        <h3>What is it?</h3>
-        <p>The Mandelbrot set is a famous fractal that reveals infinite complexity as you zoom in. It's defined as the set of complex numbers c for which the function f(z) = z² + c does not diverge when iterated from z = 0.</p>
-        
-        <h3>The Mathematics</h3>
-        <div class="math">
-            f(z) = z² + c
-            where z₀ = 0
-            zₙ₊₁ = zₙ² + c
+        <div class="panel-body">
+            <div class="control-group">
+                <label for="iterations">Base Iterations: <span id="iterValue">100</span></label>
+                <input type="range" id="iterations" min="50" max="1000" value="100" step="10">
+                <label style="display: flex; align-items: center; gap: 5px; margin-top: 5px; cursor: pointer;">
+                    <input type="checkbox" id="adaptiveToggle" checked> Adaptive Iterations
+                </label>
+            </div>
             
-            If |zₙ| remains bounded as n → ∞,
-            then c is in the Mandelbrot set
+            <div class="control-group">
+                <label for="theme">Theme:</label>
+                <select id="theme">
+                    <option value="light" selected>Light</option>
+                    <option value="dark">Dark</option>
+                    <option value="eink">E-ink</option>
+                </select>
+            </div>
+
+            <div class="control-group">
+                <label for="colorScheme">Color Scheme:</label>
+                <select id="colorScheme">
+                    <option value="classic">Classic</option>
+                    <option value="fire">Fire</option>
+                    <option value="ocean">Ocean</option>
+                    <option value="psychedelic">Psychedelic</option>
+                </select>
+            </div>
+            
+            <div class="control-group">
+                <button id="reset">Reset View</button>
+                <button id="screenshot">Save Image</button>
+            </div>
+            
+            <div class="control-group">
+                <label>Navigation:</label>
+                <p style="font-size: 11px; color: #999;">
+                    • Click to zoom in<br>
+                    • Right-click to zoom out<br>
+                    • Drag to pan<br>
+                    • Mouse wheel to zoom
+                </p>
+            </div>
         </div>
-        
-        <h3>How it Works</h3>
-        <p>For each point c in the complex plane, we iterate the function starting from z = 0. If the magnitude of z ever exceeds 2, the point will escape to infinity (it's not in the set). The number of iterations before escape determines the color.</p>
-        
-        <h3>Key Features</h3>
-        <p>• <strong>Main Cardioid:</strong> The large heart-shaped region<br>
-           • <strong>Bulb:</strong> The circular region to the left<br>
-           • <strong>Seahorse Valley:</strong> Spiral patterns<br>
-           • <strong>Mini-Mandelbrots:</strong> Smaller copies of the whole set</p>
-        
-        <h3>The Burning Ship</h3>
-        <p>A variation where we take the absolute value of each component before squaring: z = (|Re(z)| + i|Im(z)|)² + c. It resembles a ship on fire and has its own unique, often more "organic" looking structures.</p>
-        
-        <h3>Infinite Complexity</h3>
-        <p>The boundary of the Mandelbrot set has fractal dimension 2, meaning it's infinitely detailed. No matter how much you zoom, you'll always find new patterns and structures.</p>
-        
-        <h3>Connection to Chaos Theory</h3>
-        <p>The Mandelbrot set demonstrates how simple nonlinear equations can produce incredibly complex behavior - a fundamental concept in chaos theory and dynamical systems.</p>
     </div>
     
-    <div class="tour-controls">
-        <button id="tourStart">Start Guided Tour</button>
-        <button id="tourStop" disabled>Stop Tour</button>
-        <button id="tourNext" disabled>Next Location</button>
-        <button id="tourPrev" disabled>Previous</button>
-        <div class="tour-info" id="tourInfo">Click "Start Guided Tour" to explore fascinating locations</div>
+    <div class="info-panel collapsible" id="infoPanel">
+        <div class="panel-header">
+            <h2>The Mandelbrot Set</h2>
+            <button class="collapse-btn" data-target="infoPanel" aria-expanded="true" aria-label="Toggle info panel">−</button>
+        </div>
+        <div class="panel-body">
+            <h3>What is it?</h3>
+            <p>The Mandelbrot set is a famous fractal that reveals infinite complexity as you zoom in. It's defined as the set of complex numbers c for which the function f(z) = z² + c does not diverge when iterated from z = 0.</p>
+            
+            <h3>The Mathematics</h3>
+            <div class="math">
+                f(z) = z² + c
+                where z₀ = 0
+                zₙ₊₁ = zₙ² + c
+                
+                If |zₙ| remains bounded as n → ∞,
+                then c is in the Mandelbrot set
+            </div>
+            
+            <h3>How it Works</h3>
+            <p>For each point c in the complex plane, we iterate the function starting from z = 0. If the magnitude of z ever exceeds 2, the point will escape to infinity (it's not in the set). The number of iterations before escape determines the color.</p>
+            
+            <h3>Key Features</h3>
+            <p>• <strong>Main Cardioid:</strong> The large heart-shaped region<br>
+               • <strong>Bulb:</strong> The circular region to the left<br>
+               • <strong>Seahorse Valley:</strong> Spiral patterns<br>
+               • <strong>Mini-Mandelbrots:</strong> Smaller copies of the whole set</p>
+            
+            <h3>The Burning Ship</h3>
+            <p>A variation where we take the absolute value of each component before squaring: z = (|Re(z)| + i|Im(z)|)² + c. It resembles a ship on fire and has its own unique, often more "organic" looking structures.</p>
+            
+            <h3>Infinite Complexity</h3>
+            <p>The boundary of the Mandelbrot set has fractal dimension 2, meaning it's infinitely detailed. No matter how much you zoom, you'll always find new patterns and structures.</p>
+            
+            <h3>Connection to Chaos Theory</h3>
+            <p>The Mandelbrot set demonstrates how simple nonlinear equations can produce incredibly complex behavior - a fundamental concept in chaos theory and dynamical systems.</p>
+        </div>
+    </div>
+    
+    <div class="tour-controls collapsible" id="tourPanel">
+        <div class="panel-header">
+            <h2>Guided Tour</h2>
+            <button class="collapse-btn" data-target="tourPanel" aria-expanded="true" aria-label="Toggle tour controls">−</button>
+        </div>
+        <div class="panel-body">
+            <button id="tourStart">Start Guided Tour</button>
+            <button id="tourStop" disabled>Stop Tour</button>
+            <button id="tourNext" disabled>Next Location</button>
+            <button id="tourPrev" disabled>Previous</button>
+            <div class="tour-info" id="tourInfo">Click "Start Guided Tour" to explore fascinating locations</div>
+        </div>
     </div>
     
     <div class="coordinates" id="coordinates">
@@ -430,6 +508,11 @@
     
     <div class="zoom-indicator" id="zoomIndicator">
         Zoom: 1.0x
+    </div>
+
+    <div class="render-indicator" id="renderIndicator">
+        <span class="dot"></span>
+        <span id="renderModeText">Renderer: Canvas</span>
     </div>
     
     <div class="loading" id="loading">Rendering...</div>

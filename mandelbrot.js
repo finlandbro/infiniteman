@@ -25,6 +25,8 @@ class MandelbrotViewer {
         window.addEventListener('resize', () => this.resizeCanvas());
         this.initWebGL();
         this.render();
+
+        this.setupCollapsiblePanels();
         
         // Interaction state
         this.isDragging = false;
@@ -65,39 +67,7 @@ class MandelbrotViewer {
                 x: -1.75,
                 y: -0.03,
                 zoom: 1,
-                description: "A variation of the Mandelbrot set using absolute values. Note the 'ship' shape!"
-            },
-            {
-                name: "Ship's Mast",
-                type: "burningship",
-                x: -1.765,
-                y: -0.04,
-                zoom: 200,
-                description: "Zooming into the structure of the Burning Ship"
-            },
-            {
-                name: "Burning Ship Detail",
-                type: "burningship",
-                x: -1.7445,
-                y: -0.0235,
-                zoom: 1000,
-                description: "Intricate patterns on the 'sails' of the Burning Ship"
-            },
-            {
-                name: "Mini Burning Ship",
-                type: "burningship",
-                x: -1.777,
-                y: -0.007,
-                zoom: 5000,
-                description: "A tiny copy of the Burning Ship found deep within its own structure"
-            },
-            {
-                name: "The Ant",
-                type: "burningship",
-                x: -1.861,
-                y: -0.001,
-                zoom: 100,
-                description: "A small structure on the 'bow' of the ship that resembles an ant"
+                description: "The Burning Ship fractal, rendered using absolute value dynamics."
             },
             {
                 name: "Spiral Galaxy",
@@ -210,16 +180,25 @@ class MandelbrotViewer {
             this.render();
         });
         
-        document.getElementById('fractalType').addEventListener('change', (e) => {
-            this.fractalType = e.target.value;
-            this.resetView(); // Reset view when changing fractal type
-        });
-        
         // Tour controls
         document.getElementById('tourStart').addEventListener('click', () => this.startTour());
         document.getElementById('tourStop').addEventListener('click', () => this.stopTour());
         document.getElementById('tourNext').addEventListener('click', () => this.nextTourLocation());
         document.getElementById('tourPrev').addEventListener('click', () => this.prevTourLocation());
+    }
+
+    setupCollapsiblePanels() {
+        const buttons = document.querySelectorAll('.collapse-btn');
+        buttons.forEach((btn) => {
+            const targetId = btn.dataset.target;
+            const panel = document.getElementById(targetId);
+            if (!panel) return;
+            btn.addEventListener('click', () => {
+                const isCollapsed = panel.classList.toggle('collapsed');
+                btn.setAttribute('aria-expanded', (!isCollapsed).toString());
+                btn.textContent = isCollapsed ? '+' : '−';
+            });
+        });
     }
     
     handleMouseDown(e) {
@@ -495,6 +474,7 @@ class MandelbrotViewer {
             this.renderCanvas();
         }
         this.updateZoomIndicator();
+        this.updateRenderIndicator();
     }
 
     getColorSchemeIndex() {
@@ -723,6 +703,19 @@ class MandelbrotViewer {
     updateZoomIndicator() {
         const indicator = document.getElementById('zoomIndicator');
         indicator.textContent = `Zoom: ${this.zoom.toFixed(1)}x`;
+    }
+
+    updateRenderIndicator() {
+        const indicator = document.getElementById('renderIndicator');
+        const text = document.getElementById('renderModeText');
+        if (!indicator || !text) return;
+        if (this.useWebGL) {
+            indicator.classList.remove('canvas');
+            text.textContent = 'Renderer: WebGL';
+        } else {
+            indicator.classList.add('canvas');
+            text.textContent = 'Renderer: Canvas';
+        }
     }
     
     resetView() {
