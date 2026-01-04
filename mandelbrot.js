@@ -23,8 +23,8 @@ class MandelbrotViewer {
         // Canvas setup
         this.resizeCanvas();
         window.addEventListener('resize', () => this.resizeCanvas());
-
         this.initWebGL();
+        this.render();
         
         // Interaction state
         this.isDragging = false;
@@ -495,6 +495,181 @@ class MandelbrotViewer {
             this.renderCanvas();
         }
         this.updateZoomIndicator();
+    }
+
+    getColorSchemeIndex() {
+        switch (this.colorScheme) {
+            case 'fire':
+                return 1;
+            case 'ocean':
+                return 2;
+            case 'psychedelic':
+                return 3;
+            default:
+                return 0;
+        }
+    }
+
+    initWebGL() {
+        try {
+            const gl = this.canvas.getContext('webgl', { antialias: false });
+            if (!gl) {
+                console.warn('WebGL not supported, falling back to Canvas 2D.');
+                return;
+            }
+            this.gl = gl;
+            const vertexSrc = `
+                attribute vec2 a_position;
+                varying vec2 v_position;
+                void main() {
+                    v_position = a_position;
+                    gl_Position = vec4(a_position, 0.0, 1.0);
+                }
+            `;
+            const fragmentSrc = `
+                precision highp float;
+                varying vec2 v_position;
+                uniform vec2 u_resolution;
+                uniform vec2 u_center;
+                uniform float u_zoom;
+                uniform int u_maxIterations;
+                uniform int u_colorScheme;
+                uniform int u_fractalType;
+                uniform int u_theme;
+
+                vec3 hsv2rgb(vec3 c) {
+                    vec4 K = vec4(1.0, 2.0/3.0, 1.0/3.0, 3.0);
+                    vec3 p = abs(fract(c.xxx + K.xyz) * 6.0 - K.www);
+                    return c.z * mix(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
+                }
+
+                vec3 classicScheme(float t) {
+                    return hsv2rgb(vec3(t, 1.0, 1.0));
+                }
+
+                vec3 fireScheme(float t) {
+                    return vec3(min(1.0, t * 2.0), min(1.0, t * 1.0), min(1.0, t * 0.5));
+                }
+
+                vec3 oceanScheme(float t) {
+                    return vec3(t * 0.3, t * 0.5, 0.5 + t * 0.5);
+                }
+
+                vec3 psychedelicScheme(float t) {
+                    return vec3(
+                        sin(t * 12.566 + 0.0) * 0.5 + 0.5,
+                        sin(t * 18.849 + 2.0) * 0.5 + 0.5,
+                        sin(t * 25.132 + 4.0) * 0.5 + 0.5
+                    );
+                }
+
+                vec3 palette(float t, int scheme) {
+                    if (scheme == 1) return fireScheme(t);
+                    if (scheme == 2) return oceanScheme(t);
+                    if (scheme == 3) return psychedelicScheme(t);
+                    return classicScheme(t);
+                }
+
+                void main() {
+                    float scale = 4.0 / (u_resolution.x * u_zoom);
+                    vec2 c = vec2(
+                        u_center.x + (gl_FragCoord.x - 0.5 * u_resolution.x) * scale,
+                        u_center.y + (gl_FragCoord.y - 0.5 * u_resolution.y) * scale
+                    );
+
+                    vec2 z = vec2(0.0);
+                    int i;
+                    for (i = 0; i < 5000; i++) {
+                        if (i >= u_maxIterations) break;
+
+                        if (u_fractalType == 1) {
+                            z = vec2(abs(z.x), abs(z.y));
+                        }
+
+                        float x = z.x * z.x - z.y * z.y + c.x;
+                        float y = 2.0 * z.x * z.y + c.y;
+                        z = vec2(x, y);
+
+                        if (dot(z, z) > 4.0) break;
+                    }
+
+                    vec3 color;
+                    if (i >= u_maxIterations) {
+                        if (u_theme == 1) {
+                            color = vec3(1.0);
+                        } else {
+                            color = vec3(0.0);
+                        }
+                    } else {
+                        float t = float(i) / float(u_maxIterations);
+                        if (u_theme == 2) {
+                            float gray = 1.0 - t;
+                            color = vec3(gray);
+                        } else {
+                            color = palette(t, u_colorScheme);
+                        }
+                    }
+
+                    gl_FragColor = vec4(color, 1.0);
+                }
+            `;
+
+            const vertexShader = this.compileShader(gl.VERTEX_SHADER, vertexSrc);
+            const fragmentShader = this.compileShader(gl.FRAGMENT_SHADER, fragmentSrc);
+            const program = gl.createProgram();
+            gl.attachShader(program, vertexShader);
+            gl.attachShader(program, fragmentShader);
+            gl.linkProgram(program);
+            if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+                console.warn('WebGL program failed to link:', gl.getProgramInfoLog(program));
+                return;
+            }
+
+            gl.useProgram(program);
+            const positionBuffer = gl.createBuffer();
+            gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+            const positions = new Float32Array([
+                -1, -1,
+                 1, -1,
+                -1,  1,
+                 1,  1,
+            ]);
+            gl.bufferData(gl.ARRAY_BUFFER, positions, gl.STATIC_DRAW);
+            const positionLocation = gl.getAttribLocation(program, 'a_position');
+            gl.enableVertexAttribArray(positionLocation);
+            gl.vertexAttribPointer(positionLocation, 2, gl.FLOAT, false, 0, 0);
+
+            this.uniforms = {
+                resolution: gl.getUniformLocation(program, 'u_resolution'),
+                center: gl.getUniformLocation(program, 'u_center'),
+                zoom: gl.getUniformLocation(program, 'u_zoom'),
+                maxIterations: gl.getUniformLocation(program, 'u_maxIterations'),
+                colorScheme: gl.getUniformLocation(program, 'u_colorScheme'),
+                fractalType: gl.getUniformLocation(program, 'u_fractalType'),
+                theme: gl.getUniformLocation(program, 'u_theme'),
+            };
+
+            this.program = program;
+            this.useWebGL = true;
+            gl.viewport(0, 0, this.canvas.width, this.canvas.height);
+            console.info('WebGL rendering enabled.');
+        } catch (error) {
+            console.warn('Failed to initialize WebGL, falling back to Canvas 2D.', error);
+            this.useWebGL = false;
+        }
+    }
+
+    compileShader(type, source) {
+        const gl = this.gl;
+        const shader = gl.createShader(type);
+        gl.shaderSource(shader, source);
+        gl.compileShader(shader);
+        if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+            console.warn('Shader compile failed:', gl.getShaderInfoLog(shader));
+            gl.deleteShader(shader);
+            throw new Error('Shader compilation failed');
+        }
+        return shader;
     }
 
     renderCanvas() {
