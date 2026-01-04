@@ -16,6 +16,8 @@ class MandelbrotViewer {
         this.initialZoom = 1;
         this.pinchCenter = { x: 0, y: 0 };
         this.useWebGL = false;
+        this.webglAvailable = false;
+        this.webglEnabled = true;
         this.gl = null;
         this.program = null;
         this.uniforms = {};
@@ -179,6 +181,20 @@ class MandelbrotViewer {
             document.body.setAttribute('data-theme', e.target.value);
             this.render();
         });
+
+        const webglToggle = document.getElementById('webglToggle');
+        if (webglToggle) {
+            webglToggle.addEventListener('change', (e) => {
+                this.webglEnabled = e.target.checked;
+                if (this.webglEnabled && this.webglAvailable) {
+                    this.useWebGL = true;
+                } else {
+                    this.useWebGL = false;
+                }
+                this.updateWebGLToggleUI();
+                this.render();
+            });
+        }
         
         // Tour controls
         document.getElementById('tourStart').addEventListener('click', () => this.startTour());
@@ -630,12 +646,17 @@ class MandelbrotViewer {
             };
 
             this.program = program;
-            this.useWebGL = true;
+            this.webglAvailable = true;
+            this.useWebGL = this.webglEnabled;
             gl.viewport(0, 0, this.canvas.width, this.canvas.height);
             console.info('WebGL rendering enabled.');
+            this.updateWebGLToggleUI();
         } catch (error) {
             console.warn('Failed to initialize WebGL, falling back to Canvas 2D.', error);
             this.useWebGL = false;
+            this.webglAvailable = false;
+            this.webglEnabled = false;
+            this.updateWebGLToggleUI();
         }
     }
 
@@ -715,6 +736,22 @@ class MandelbrotViewer {
         } else {
             indicator.classList.add('canvas');
             text.textContent = 'Renderer: Canvas';
+        }
+    }
+
+    updateWebGLToggleUI() {
+        const toggle = document.getElementById('webglToggle');
+        const status = document.getElementById('webglStatus');
+        if (!toggle || !status) return;
+        if (!this.webglAvailable) {
+            toggle.checked = false;
+            toggle.disabled = true;
+            status.textContent = 'WebGL not supported';
+            this.useWebGL = false;
+        } else {
+            toggle.disabled = false;
+            toggle.checked = this.webglEnabled;
+            status.textContent = this.webglEnabled ? 'WebGL enabled' : 'WebGL disabled';
         }
     }
     
