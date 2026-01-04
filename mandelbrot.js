@@ -359,7 +359,7 @@ class MandelbrotViewer {
         if (this.isDragging) {
             const scale = 4 / (this.canvas.width * this.zoom);
             this.centerX -= (e.clientX - this.dragStartX) * scale;
-            this.centerY -= (e.clientY - this.dragStartY) * scale;
+            this.centerY += (e.clientY - this.dragStartY) * scale;
             this.dragStartX = e.clientX;
             this.dragStartY = e.clientY;
             this.render();
@@ -401,7 +401,7 @@ class MandelbrotViewer {
         } else if (e.touches.length === 1 && this.isDragging) {
             const scale = 4 / (this.canvas.width * this.zoom);
             this.centerX -= (e.touches[0].clientX - this.dragStartX) * scale;
-            this.centerY -= (e.touches[0].clientY - this.dragStartY) * scale;
+            this.centerY += (e.touches[0].clientY - this.dragStartY) * scale;
             this.dragStartX = e.touches[0].clientX;
             this.dragStartY = e.touches[0].clientY;
             this.render();
