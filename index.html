@@ -259,6 +259,56 @@
             opacity: 0.85;
         }
 
+        .hud-collapse-btn {
+            background: transparent;
+            border: 1px solid var(--border-color);
+            color: var(--text-color);
+            border-radius: 50%;
+            width: 32px;
+            height: 32px;
+            font-size: 14px;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            transition: background 0.2s, transform 0.2s;
+        }
+
+        .hud-collapse-btn:hover {
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        .overlay-panel.hud-collapsed {
+            width: 64px;
+            min-width: 64px;
+            height: 64px;
+            padding: 8px;
+            border-radius: 999px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+        }
+
+        .overlay-panel.hud-collapsed .overlay-body,
+        .overlay-panel.hud-collapsed .panel-title h2 {
+            display: none;
+        }
+
+        .overlay-panel.hud-collapsed .panel-title {
+            width: 100%;
+            justify-content: center;
+            margin: 0;
+        }
+
+        .overlay-panel.hud-collapsed .hud-collapse-btn {
+            width: 48px;
+            height: 48px;
+            font-size: 12px;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+        }
+
         .tour-controls button {
             background: #9C27B0;
             color: white;
@@ -417,6 +467,7 @@
     <div class="overlay-panel" id="commandPanel">
         <div class="panel-title">
             <h2>Fractal Explorer HUD</h2>
+            <button id="hudCollapseBtn" class="hud-collapse-btn" aria-label="Toggle HUD visibility" aria-expanded="true">−</button>
         </div>
         <div class="overlay-body">
             <section class="overlay-section collapsible" id="controlsSection">

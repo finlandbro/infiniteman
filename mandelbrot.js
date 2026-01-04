@@ -30,6 +30,9 @@ class MandelbrotViewer {
         this.uniforms = {};
         this.cpuFallbackZoom = 100000;
         this.isCpuMode = false;
+        this.isInteracting = false;
+        this.renderTimer = null;
+        this.interactionCooldownMs = 500;
         
         // Tour state
         this.isTouring = false;
@@ -337,6 +340,16 @@ class MandelbrotViewer {
         document.getElementById('tourStop').addEventListener('click', () => this.stopTour());
         document.getElementById('tourNext').addEventListener('click', () => this.nextTourLocation());
         document.getElementById('tourPrev').addEventListener('click', () => this.prevTourLocation());
+
+        const hudPanel = document.getElementById('commandPanel');
+        const hudCollapseBtn = document.getElementById('hudCollapseBtn');
+        if (hudPanel && hudCollapseBtn) {
+            hudCollapseBtn.addEventListener('click', () => {
+                const isCollapsed = hudPanel.classList.toggle('hud-collapsed');
+                hudCollapseBtn.setAttribute('aria-expanded', (!isCollapsed).toString());
+                hudCollapseBtn.textContent = isCollapsed ? 'HUD' : '−';
+            });
+        }
     }
 
     setupWebGLEvents() {
@@ -366,6 +379,7 @@ class MandelbrotViewer {
     handleMouseDown(e) {
         if (e.button === 0) {
             this.isDragging = true;
+            this.isInteracting = true;
             this.dragStartX = e.clientX;
             this.dragStartY = e.clientY;
         } else if (e.button === 2) {
@@ -389,14 +403,26 @@ class MandelbrotViewer {
     handleMouseUp(e) {
         if (e.button === 0 && !this.isDragging) this.zoomAt(e.clientX, e.clientY, 2);
         this.isDragging = false;
+        this.isInteracting = false;
+        this.render(); // Final render to potentially switch to CPU
     }
 
     handleWheel(e) {
         e.preventDefault();
+        this.isInteracting = true;
         this.zoomAt(e.clientX, e.clientY, e.deltaY > 0 ? 0.9 : 1.1);
+        
+        // Clear previous timer and set a new one to detect end of wheeling
+        if (this.renderTimer) clearTimeout(this.renderTimer);
+        this.renderTimer = setTimeout(() => {
+            this.isInteracting = false;
+            this.render();
+            this.renderTimer = null;
+        }, this.interactionCooldownMs);
     }
 
     handleTouchStart(e) {
+        this.isInteracting = true;
         if (e.touches.length === 1 && !this.isPinching) {
             this.isDragging = true;
             this.dragStartX = e.touches[0].clientX;
@@ -432,6 +458,8 @@ class MandelbrotViewer {
         if (e.touches.length === 0) {
             this.isDragging = false;
             this.isPinching = false;
+            this.isInteracting = false;
+            this.render(); // Final render
         } else if (e.touches.length === 1) {
             this.isPinching = false;
             this.isDragging = true;
@@ -476,7 +504,9 @@ class MandelbrotViewer {
 
     render() {
         this.updateIterations();
-        const useCpu = !this.gl || !this.program || this.zoom >= this.cpuFallbackZoom;
+        // Force WebGL during interaction, otherwise check fallback zoom
+        const useCpu = (!this.gl || !this.program || this.zoom >= this.cpuFallbackZoom) && !this.isInteracting;
+        
         this.isCpuMode = useCpu;
         if (useCpu) {
             this.renderCpu();
@@ -580,7 +610,7 @@ class MandelbrotViewer {
     }
 
     updateZoomIndicator() {
-        document.getElementById('zoomIndicator').textContent = this.isCpuMode ? `Zoom: ${this.zoom.toFixed(1)}x (CPU mode)` : `Zoom: ${this.zoom.toFixed(1)}x`;
+        document.getElementById('zoomIndicator').textContent = `Zoom: ${this.zoom.toFixed(1)}x`;
     }
 
     updateRenderModeBadge() {
