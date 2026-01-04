@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Infinite Zoom Mandelbrot Set Viewer</title>
+    <style>
+        :root {
+            --bg-color: #f5f5f5;
+            --text-color: #222;
+            --panel-bg: rgba(255, 255, 255, 0.9);
+            --border-color: #ccc;
+            --label-color: #555;
+            --math-bg: rgba(0, 0, 0, 0.05);
+            --control-text: #444;
+            --heading-main: #4CAF50;
+            --heading-info: #2196F3;
+            --heading-accent: #FF9800;
+        }
+
+        [data-theme="dark"] {
+            --bg-color: #000;
+            --text-color: #fff;
+            --panel-bg: rgba(0, 0, 0, 0.8);
+            --border-color: #333;
+            --label-color: #ccc;
+            --math-bg: rgba(255, 255, 255, 0.1);
+            --control-text: #ddd;
+            --heading-main: #4CAF50;
+            --heading-info: #2196F3;
+            --heading-accent: #FF9800;
+        }
+
+        [data-theme="eink"] {
+            --bg-color: #ffffff;
+            --text-color: #000000;
+            --panel-bg: #ffffff;
+            --border-color: #000000;
+            --label-color: #000000;
+            --math-bg: #eeeeee;
+            --control-text: #000000;
+            --heading-main: #000000;
+            --heading-info: #000000;
+            --heading-accent: #000000;
+            backdrop-filter: none !important;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: var(--bg-color);
+            color: var(--text-color);
+            overflow: hidden;
+            transition: background 0.3s, color 0.3s;
+        }
+
+        #canvas {
+            display: block;
+            cursor: crosshair;
+            background: var(--bg-color);
+        }
+
+        .controls {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            background: var(--panel-bg);
+            padding: 20px;
+            border-radius: 10px;
+            border: 1px solid var(--border-color);
+            max-width: 300px;
+            backdrop-filter: blur(10px);
+            color: var(--text-color);
+        }
+
+        .controls h2 {
+            margin-bottom: 15px;
+            color: var(--heading-main);
+            font-size: 18px;
+        }
+
+        .control-group {
+            margin-bottom: 15px;
+        }
+
+        .control-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-size: 12px;
+            color: var(--label-color);
+        }
+
+        .control-group input[type="range"] {
+            width: 100%;
+            margin-bottom: 5px;
+        }
+
+        .control-group button {
+            background: #4CAF50;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin-right: 5px;
+            margin-bottom: 5px;
+            font-size: 12px;
+            transition: background 0.3s;
+        }
+
+        .control-group button:hover {
+            background: #45a049;
+        }
+
+        .control-group button:disabled {
+            background: #666;
+            cursor: not-allowed;
+        }
+
+        .info-panel {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: var(--panel-bg);
+            padding: 20px;
+            border-radius: 10px;
+            border: 1px solid var(--border-color);
+            max-width: 350px;
+            backdrop-filter: blur(10px);
+            max-height: 80vh;
+            overflow-y: auto;
+            color: var(--text-color);
+        }
+
+        .info-panel h2 {
+            margin-bottom: 15px;
+            color: var(--heading-info);
+            font-size: 18px;
+        }
+
+        .info-panel h3 {
+            margin-top: 15px;
+            margin-bottom: 10px;
+            color: var(--heading-accent);
+            font-size: 14px;
+        }
+
+        .info-panel p {
+            margin-bottom: 10px;
+            font-size: 12px;
+            line-height: 1.4;
+            color: var(--control-text);
+        }
+
+        .info-panel .math {
+            background: var(--math-bg);
+            padding: 10px;
+            border-radius: 5px;
+            margin: 10px 0;
+            font-family: 'Courier New', monospace;
+            font-size: 11px;
+            color: var(--text-color);
+        }
+
+        .tour-controls {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: var(--panel-bg);
+            padding: 15px;
+            border-radius: 10px;
+            border: 1px solid var(--border-color);
+            backdrop-filter: blur(10px);
+            text-align: center;
+            color: var(--text-color);
+        }
+
+        .tour-controls button {
+            background: #9C27B0;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 0 5px;
+            font-size: 14px;
+            transition: background 0.3s;
+        }
+
+        [data-theme="eink"] .tour-controls button {
+            background: #000000;
+            border: 1px solid #000000;
+        }
+
+        .tour-controls button:hover {
+            background: #7B1FA2;
+        }
+
+        [data-theme="eink"] .tour-controls button:hover {
+            background: #333333;
+        }
+
+        .tour-info {
+            margin-top: 10px;
+            font-size: 12px;
+            color: var(--label-color);
+        }
+
+        .coordinates {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            background: var(--panel-bg);
+            padding: 10px;
+            border-radius: 5px;
+            border: 1px solid var(--border-color);
+            font-size: 11px;
+            font-family: 'Courier New', monospace;
+            backdrop-filter: blur(10px);
+            color: var(--text-color);
+        }
+
+        .loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 18px;
+            color: #4CAF50;
+            display: none;
+        }
+
+        .zoom-indicator {
+            position: absolute;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: var(--panel-bg);
+            padding: 10px 20px;
+            border-radius: 5px;
+            border: 1px solid var(--border-color);
+            font-size: 14px;
+            backdrop-filter: blur(10px);
+            color: var(--text-color);
+        }
+
+        select {
+            background: var(--bg-color);
+            color: var(--text-color);
+            border: 1px solid var(--border-color);
+            padding: 5px;
+            border-radius: 4px;
+            width: 100%;
+        }
+    </style>
+</head>
+    <body data-theme="light">
+    <canvas id="canvas"></canvas>
+    
+    <div class="controls">
+        <h2>Mandelbrot Controls</h2>
+        
+        <div class="control-group">
+            <label for="iterations">Base Iterations: <span id="iterValue">100</span></label>
+            <input type="range" id="iterations" min="50" max="1000" value="100" step="10">
+            <label style="display: flex; align-items: center; gap: 5px; margin-top: 5px; cursor: pointer;">
+                <input type="checkbox" id="adaptiveToggle" checked> Adaptive Iterations
+            </label>
+        </div>
+        
+        <div class="control-group">
+            <label for="theme">Theme:</label>
+            <select id="theme">
+                <option value="light" selected>Light</option>
+                <option value="dark">Dark</option>
+                <option value="eink">E-ink</option>
+            </select>
+        </div>
+
+        <div class="control-group">
+            <label for="fractalType">Fractal Type:</label>
+            <select id="fractalType">
+                <option value="mandelbrot">Mandelbrot</option>
+                <option value="burningship">Burning Ship</option>
+            </select>
+        </div>
+        
+        <div class="control-group">
+            <label for="colorScheme">Color Scheme:</label>
+            <select id="colorScheme">
+                <option value="classic">Classic</option>
+                <option value="fire">Fire</option>
+                <option value="ocean">Ocean</option>
+                <option value="psychedelic">Psychedelic</option>
+            </select>
+        </div>
+        
+        <div class="control-group">
+            <button id="reset">Reset View</button>
+            <button id="screenshot">Save Image</button>
+        </div>
+        
+        <div class="control-group">
+            <label>Navigation:</label>
+            <p style="font-size: 11px; color: #999;">
+                • Click to zoom in<br>
+                • Right-click to zoom out<br>
+                • Drag to pan<br>
+                • Mouse wheel to zoom
+            </p>
+        </div>
+    </div>
+    
+    <div class="info-panel">
+        <h2>The Mandelbrot Set</h2>
+        
+        <h3>What is it?</h3>
+        <p>The Mandelbrot set is a famous fractal that reveals infinite complexity as you zoom in. It's defined as the set of complex numbers c for which the function f(z) = z² + c does not diverge when iterated from z = 0.</p>
+        
+        <h3>The Mathematics</h3>
+        <div class="math">
+            f(z) = z² + c
+            where z₀ = 0
+            zₙ₊₁ = zₙ² + c
+            
+            If |zₙ| remains bounded as n → ∞,
+            then c is in the Mandelbrot set
+        </div>
+        
+        <h3>How it Works</h3>
+        <p>For each point c in the complex plane, we iterate the function starting from z = 0. If the magnitude of z ever exceeds 2, the point will escape to infinity (it's not in the set). The number of iterations before escape determines the color.</p>
+        
+        <h3>Key Features</h3>
+        <p>• <strong>Main Cardioid:</strong> The large heart-shaped region<br>
+           • <strong>Bulb:</strong> The circular region to the left<br>
+           • <strong>Seahorse Valley:</strong> Spiral patterns<br>
+           • <strong>Mini-Mandelbrots:</strong> Smaller copies of the whole set</p>
+        
+        <h3>The Burning Ship</h3>
+        <p>A variation where we take the absolute value of each component before squaring: z = (|Re(z)| + i|Im(z)|)² + c. It resembles a ship on fire and has its own unique, often more "organic" looking structures.</p>
+        
+        <h3>Infinite Complexity</h3>
+        <p>The boundary of the Mandelbrot set has fractal dimension 2, meaning it's infinitely detailed. No matter how much you zoom, you'll always find new patterns and structures.</p>
+        
+        <h3>Connection to Chaos Theory</h3>
+        <p>The Mandelbrot set demonstrates how simple nonlinear equations can produce incredibly complex behavior - a fundamental concept in chaos theory and dynamical systems.</p>
+    </div>
+    
+    <div class="tour-controls">
+        <button id="tourStart">Start Guided Tour</button>
+        <button id="tourStop" disabled>Stop Tour</button>
+        <button id="tourNext" disabled>Next Location</button>
+        <button id="tourPrev" disabled>Previous</button>
+        <div class="tour-info" id="tourInfo">Click "Start Guided Tour" to explore fascinating locations</div>
+    </div>
+    
+    <div class="coordinates" id="coordinates">
+        X: 0.000000 | Y: 0.000000 | Zoom: 1.0x
+    </div>
+    
+    <div class="zoom-indicator" id="zoomIndicator">
+        Zoom: 1.0x
+    </div>
+    
+    <div class="loading" id="loading">Rendering...</div>
+
+    <script src="mandelbrot.js"></script>
+</body>
+</html>
