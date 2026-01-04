@@ -45,6 +45,34 @@
             backdrop-filter: none !important;
         }
 
+        [data-theme="eink-color"] {
+            --bg-color: #f0f0e0;
+            --text-color: #202020;
+            --panel-bg: #f8f8f0;
+            --border-color: #808080;
+            --label-color: #404040;
+            --math-bg: #e0e0d0;
+            --control-text: #303030;
+            --heading-main: #b04040;
+            --heading-info: #4070a0;
+            --heading-accent: #a07040;
+            backdrop-filter: none !important;
+        }
+
+        [data-theme="eink-color"] {
+            --bg-color: #f0f0e0;
+            --text-color: #202020;
+            --panel-bg: #f8f8f0;
+            --border-color: #808080;
+            --label-color: #404040;
+            --math-bg: #e0e0d0;
+            --control-text: #303030;
+            --heading-main: #b04040;
+            --heading-info: #4070a0;
+            --heading-accent: #a07040;
+            backdrop-filter: none !important;
+        }
+
         * {
             margin: 0;
             padding: 0;
@@ -285,7 +313,15 @@
             transform: translate(-50%, -50%);
             font-size: 18px;
             color: #4CAF50;
+            background: var(--panel-bg);
+            padding: 20px 40px;
+            border-radius: 12px;
+            border: 1px solid var(--border-color);
+            backdrop-filter: blur(10px);
             display: none;
+            z-index: 1000;
+            text-align: center;
+            max-width: 80%;
         }
 
         .zoom-indicator {
@@ -300,34 +336,6 @@
             font-size: 14px;
             backdrop-filter: blur(10px);
             color: var(--text-color);
-        }
-
-        .render-indicator {
-            position: absolute;
-            top: 70px;
-            left: 50%;
-            transform: translateX(-50%);
-            background: var(--panel-bg);
-            padding: 8px 18px;
-            border-radius: 5px;
-            border: 1px solid var(--border-color);
-            font-size: 12px;
-            backdrop-filter: blur(10px);
-            color: var(--text-color);
-            display: flex;
-            align-items: center;
-            gap: 6px;
-        }
-
-        .render-indicator .dot {
-            width: 10px;
-            height: 10px;
-            border-radius: 50%;
-            background: #4CAF50;
-        }
-
-        .render-indicator.canvas .dot {
-            background: #FF9800;
         }
 
         select {
@@ -353,8 +361,7 @@
 
             .overlay-panel,
             .coordinates,
-            .zoom-indicator,
-            .render-indicator {
+            .zoom-indicator {
                 position: static;
                 width: 100%;
                 max-width: none;
@@ -363,8 +370,7 @@
             }
 
             .coordinates,
-            .zoom-indicator,
-            .render-indicator {
+            .zoom-indicator {
                 text-align: center;
             }
         }
@@ -407,7 +413,8 @@
                         <select id="theme">
                             <option value="light" selected>Light</option>
                             <option value="dark">Dark</option>
-                            <option value="eink">E-ink</option>
+                            <option value="eink">E-ink Mono</option>
+                            <option value="eink-color">E-ink Color</option>
                         </select>
                     </div>
 
@@ -418,17 +425,12 @@
                             <option value="fire">Fire</option>
                             <option value="ocean">Ocean</option>
                             <option value="psychedelic">Psychedelic</option>
+                            <option value="eink_mono">E-ink Monochrome</option>
+                            <option value="eink_color">E-ink Color</option>
                         </select>
                     </div>
 
-                    <div class="control-group" id="webglToggleGroup">
-                        <label style="display: flex; align-items: center; gap: 5px; cursor: pointer;">
-                            <input type="checkbox" id="webglToggle" checked> Enable WebGL acceleration
-                        </label>
-                        <small id="webglStatus" style="display: block; margin-top: 4px; color: var(--label-color);">WebGL enabled</small>
-                    </div>
-                    
-                    <div class="control-group button-row">
+                    <div class="control-group button-row" style="margin-top: 10px;">
                         <button id="reset">Reset View</button>
                         <button id="screenshot">Save Image</button>
                     </div>
@@ -510,11 +512,6 @@
         Zoom: 1.0x
     </div>
 
-    <div class="render-indicator" id="renderIndicator">
-        <span class="dot"></span>
-        <span id="renderModeText">Renderer: Canvas</span>
-    </div>
-    
     <div class="loading" id="loading">Rendering...</div>
 
     <script src="mandelbrot.js"></script>
