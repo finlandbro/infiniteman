@@ -59,31 +59,15 @@
             backdrop-filter: none !important;
         }
 
-        [data-theme="eink-color"] {
-            --bg-color: #f0f0e0;
-            --text-color: #202020;
-            --panel-bg: #f8f8f0;
-            --border-color: #808080;
-            --label-color: #404040;
-            --math-bg: #e0e0d0;
-            --control-text: #303030;
-            --heading-main: #b04040;
-            --heading-info: #4070a0;
-            --heading-accent: #a07040;
-            backdrop-filter: none !important;
-        }
-
         * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
+            color: var(--text-color);
+            overflow: hidden;
+            transition: background 0.3s, color 0.3s;
         }
 
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             background: var(--bg-color);
-            color: var(--text-color);
-            overflow: hidden;
             transition: background 0.3s, color 0.3s;
         }
 

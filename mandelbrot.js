@@ -143,9 +143,74 @@ class MandelbrotViewer {
             }
             this.gl = gl;
             
-            const vertexSrc = "attribute vec2 a_position; varying vec2 v_position; void main() { v_position = a_position; gl_Position = vec4(a_position, 0.0, 1.0); }";
+            const vertexSrc = `
+                attribute vec2 a_position;
+                varying vec2 v_position;
+
+                void main() {
+                    v_position = a_position;
+                    gl_Position = vec4(a_position, 0.0, 1.0);
+                }
+            `;
             
-            const fragmentSrc = "precision highp float; varying vec2 v_position; uniform vec2 u_resolution; uniform vec2 u_center; uniform float u_zoom; uniform int u_maxIterations; uniform int u_colorScheme; uniform int u_fractalType; uniform int u_theme; vec3 hsv2rgb(vec3 c) { vec4 K = vec4(1.0, 2.0/3.0, 1.0/3.0, 3.0); vec3 p = abs(fract(c.xxx + K.xyz) * 6.0 - K.www); return c.z * mix(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y); } vec3 palette(float t, int scheme) { if (scheme == 1) return vec3(min(1.0, t * 2.0), min(1.0, t * 1.0), min(1.0, t * 0.5)); if (scheme == 2) return vec3(t * 0.3, t * 0.5, 0.5 + t * 0.5); if (scheme == 3) return vec3(sin(t * 12.566) * 0.5 + 0.5, sin(t * 18.849 + 2.0) * 0.5 + 0.5, sin(t * 25.132 + 4.0) * 0.5 + 0.5); if (scheme == 4) return vec3(1.0 - t); if (scheme == 5) { vec3 c1 = hsv2rgb(vec3(t, 0.5, 0.8)); return floor(c1 * 4.0) / 4.0; } return hsv2rgb(vec3(t, 1.0, 1.0)); } void main() { float scale = 4.0 / (u_resolution.x * u_zoom); vec2 c = vec2(u_center.x + (gl_FragCoord.x - 0.5 * u_resolution.x) * scale, u_center.y + (gl_FragCoord.y - 0.5 * u_resolution.y) * scale); vec2 z = vec2(0.0); int iterations = 0; bool escaped = false; for (int i = 0; i < 5000; i++) { if (i >= u_maxIterations) break; if (u_fractalType == 1) z = vec2(abs(z.x), abs(z.y)); float x = z.x * z.x - z.y * z.y + c.x; float y = 2.0 * z.x * z.y + c.y; z = vec2(x, y); if (dot(z, z) > 4.0) { escaped = true; iterations = i; break; } } vec3 color; if (!escaped) { color = vec3(0.0); } else { float t = float(iterations) / float(u_maxIterations); color = palette(t, u_colorScheme); } gl_FragColor = vec4(color, 1.0); }";
+            const fragmentSrc = `
+                precision highp float;
+                varying vec2 v_position;
+                uniform vec2 u_resolution;
+                uniform vec2 u_center;
+                uniform float u_zoom;
+                uniform int u_maxIterations;
+                uniform int u_colorScheme;
+                uniform int u_fractalType;
+
+                vec3 hsv2rgb(vec3 c) {
+                    vec4 K = vec4(1.0, 2.0/3.0, 1.0/3.0, 3.0);
+                    vec3 p = abs(fract(c.xxx + K.xyz) * 6.0 - K.www);
+                    return c.z * mix(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
+                }
+
+                vec3 palette(float t, int scheme) {
+                    if (scheme == 1) return vec3(min(1.0, t * 2.0), min(1.0, t * 1.0), min(1.0, t * 0.5)); // fire
+                    if (scheme == 2) return vec3(t * 0.3, t * 0.5, 0.5 + t * 0.5); // ocean
+                    if (scheme == 3) return vec3(sin(t * 12.566) * 0.5 + 0.5, sin(t * 18.849 + 2.0) * 0.5 + 0.5, sin(t * 25.132 + 4.0) * 0.5 + 0.5); // psychedelic
+                    if (scheme == 4) return vec3(1.0 - t); // eink monochrome
+                    if (scheme == 5) {
+                        // eink color: muted tones with posterization
+                        vec3 c1 = hsv2rgb(vec3(t, 0.5, 0.8));
+                        return floor(c1 * 4.0) / 4.0;
+                    }
+                    return hsv2rgb(vec3(t, 1.0, 1.0)); // classic
+                }
+
+                void main() {
+                    float scale = 4.0 / (u_resolution.x * u_zoom);
+                    vec2 c = vec2(
+                        u_center.x + (gl_FragCoord.x - 0.5 * u_resolution.x) * scale,
+                        u_center.y + (gl_FragCoord.y - 0.5 * u_resolution.y) * scale
+                    );
+
+                    vec2 z = vec2(0.0);
+                    int iterations = 0;
+                    bool escaped = false;
+                    for (int i = 0; i < 5000; i++) {
+                        if (i >= u_maxIterations) break;
+                        if (u_fractalType == 1) z = vec2(abs(z.x), abs(z.y));
+                        float x = z.x * z.x - z.y * z.y + c.x;
+                        float y = 2.0 * z.x * z.y + c.y;
+                        z = vec2(x, y);
+                        if (dot(z, z) > 4.0) { escaped = true; iterations = i; break; }
+                    }
+
+                    vec3 color;
+                    if (!escaped) {
+                        color = vec3(0.0);
+                    } else {
+                        float t = float(iterations) / float(u_maxIterations);
+                        color = palette(t, u_colorScheme);
+                    }
+                    gl_FragColor = vec4(color, 1.0);
+                }
+            `;
 
             const vertexShader = this.compileShader(gl.VERTEX_SHADER, vertexSrc);
             const fragmentShader = this.compileShader(gl.FRAGMENT_SHADER, fragmentSrc);
@@ -176,7 +241,6 @@ class MandelbrotViewer {
                 maxIterations: gl.getUniformLocation(program, 'u_maxIterations'),
                 colorScheme: gl.getUniformLocation(program, 'u_colorScheme'),
                 fractalType: gl.getUniformLocation(program, 'u_fractalType'),
-                theme: gl.getUniformLocation(program, 'u_theme'),
             };
         } catch (error) {
             console.error('WebGL Init error:', error);
@@ -247,7 +311,6 @@ class MandelbrotViewer {
         
         document.getElementById('theme').addEventListener('change', (e) => {
             document.body.setAttribute('data-theme', e.target.value);
-            this.render();
         });
         
         document.getElementById('tourStart').addEventListener('click', () => this.startTour());
@@ -338,7 +401,7 @@ class MandelbrotViewer {
         } else if (e.touches.length === 1 && this.isDragging) {
             const scale = 4 / (this.canvas.width * this.zoom);
             this.centerX -= (e.touches[0].clientX - this.dragStartX) * scale;
-            this.centerY += (e.touches[0].clientY - this.dragStartY) * scale;
+            this.centerY -= (e.touches[0].clientY - this.dragStartY) * scale;
             this.dragStartX = e.touches[0].clientX;
             this.dragStartY = e.touches[0].clientY;
             this.render();
