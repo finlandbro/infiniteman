@@ -820,7 +820,10 @@ class MandelbrotViewer {
     goToTourLocation(index) {
         const location = this.tourLocations[index];
         this.fractalType = location.type || 'mandelbrot';
-        document.getElementById('fractalType').value = this.fractalType;
+        const fractalSelect = document.getElementById('fractalType');
+        if (fractalSelect) {
+            fractalSelect.value = this.fractalType;
+        }
         
         this.centerX = location.x;
         this.centerY = location.y;
