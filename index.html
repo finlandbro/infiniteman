@@ -258,6 +258,66 @@
             border-radius: 4px;
             width: 100%;
         }
+
+        @media (max-width: 900px) {
+            body {
+                overflow-y: auto;
+                padding: 16px;
+            }
+
+            #canvas {
+                display: block;
+                width: 100vw;
+            }
+
+            .controls,
+            .info-panel,
+            .tour-controls,
+            .coordinates,
+            .zoom-indicator {
+                position: static;
+                width: 100%;
+                max-width: none;
+                margin: 12px auto;
+                transform: none;
+            }
+
+            .controls,
+            .info-panel {
+                padding: 16px;
+            }
+
+            .tour-controls {
+                display: flex;
+                flex-wrap: wrap;
+                justify-content: center;
+                gap: 8px;
+                border-radius: 12px;
+            }
+
+            .tour-controls button {
+                flex: 1 1 45%;
+            }
+
+            .coordinates,
+            .zoom-indicator {
+                text-align: center;
+            }
+        }
+
+        @media (max-width: 600px) {
+            body {
+                padding-bottom: 48px;
+            }
+
+            .tour-controls button {
+                flex: 1 1 100%;
+            }
+
+            .control-group button {
+                width: 100%;
+            }
+        }
     </style>
 </head>
     <body data-theme="light">
