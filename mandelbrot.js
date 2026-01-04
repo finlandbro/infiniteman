@@ -11,6 +11,10 @@ class MandelbrotViewer {
         this.maxIterations = 100;
         this.adaptiveIterations = true;
         this.fractalType = 'mandelbrot';
+        this.isPinching = false;
+        this.initialPinchDistance = 0;
+        this.initialZoom = 1;
+        this.pinchCenter = { x: 0, y: 0 };
         
         // Canvas setup
         this.resizeCanvas();
@@ -253,15 +257,36 @@ class MandelbrotViewer {
     }
     
     handleTouchStart(e) {
-        if (e.touches.length === 1) {
+        if (e.touches.length === 1 && !this.isPinching) {
             this.isDragging = true;
             this.dragStartX = e.touches[0].clientX;
             this.dragStartY = e.touches[0].clientY;
+        }
+        
+        if (e.touches.length === 2) {
+            this.isDragging = false;
+            this.isPinching = true;
+            this.initialPinchDistance = this.getTouchDistance(e.touches);
+            this.initialZoom = this.zoom;
+            this.pinchCenter = this.getTouchCenter(e.touches);
         }
     }
     
     handleTouchMove(e) {
         e.preventDefault();
+        
+        if (this.isPinching && e.touches.length === 2) {
+            const currentDistance = this.getTouchDistance(e.touches);
+            if (this.initialPinchDistance === 0) return;
+            
+            const pinchScale = currentDistance / this.initialPinchDistance;
+            const targetZoom = this.initialZoom * pinchScale;
+            const factor = targetZoom / this.zoom;
+            const center = this.getTouchCenter(e.touches);
+            this.zoomAt(center.x, center.y, factor);
+            return;
+        }
+        
         if (e.touches.length === 1 && this.isDragging) {
             const dx = e.touches[0].clientX - this.dragStartX;
             const dy = e.touches[0].clientY - this.dragStartY;
@@ -280,7 +305,26 @@ class MandelbrotViewer {
     handleTouchEnd(e) {
         if (e.touches.length === 0) {
             this.isDragging = false;
+            this.isPinching = false;
+        } else if (e.touches.length === 1) {
+            // If one finger remains, allow panning to continue seamlessly
+            this.isPinching = false;
+            this.isDragging = true;
+            this.dragStartX = e.touches[0].clientX;
+            this.dragStartY = e.touches[0].clientY;
         }
+    }
+    
+    getTouchDistance(touches) {
+        const dx = touches[0].clientX - touches[1].clientX;
+        const dy = touches[0].clientY - touches[1].clientY;
+        return Math.hypot(dx, dy);
+    }
+    
+    getTouchCenter(touches) {
+        const x = (touches[0].clientX + touches[1].clientX) / 2;
+        const y = (touches[0].clientY + touches[1].clientY) / 2;
+        return { x, y };
     }
     
     zoomAt(screenX, screenY, factor) {
