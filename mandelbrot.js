@@ -1,6 +1,10 @@
 class MandelbrotViewer {
     constructor() {
         this.canvas = document.getElementById('canvas');
+        this.cpuCanvas = document.getElementById('cpuCanvas');
+        this.cpuCtx = this.cpuCanvas ? this.cpuCanvas.getContext('2d') : null;
+        this.cpuBuffer = document.createElement('canvas');
+        this.cpuBufferCtx = this.cpuBuffer.getContext('2d');
         
         // View parameters
         this.centerX = -0.5;
@@ -24,6 +28,8 @@ class MandelbrotViewer {
         this.gl = null;
         this.program = null;
         this.uniforms = {};
+        this.cpuFallbackZoom = 100000;
+        this.isCpuMode = false;
         
         // Tour state
         this.isTouring = false;
@@ -158,7 +164,9 @@ class MandelbrotViewer {
                 varying vec2 v_position;
                 uniform vec2 u_resolution;
                 uniform vec2 u_center;
-                uniform float u_zoom;
+                uniform vec2 u_centerResidual;
+                uniform float u_zoomBase;
+                uniform float u_zoomResidual;
                 uniform int u_maxIterations;
                 uniform int u_colorScheme;
                 uniform int u_fractalType;
@@ -183,11 +191,13 @@ class MandelbrotViewer {
                 }
 
                 void main() {
-                    float scale = 4.0 / (u_resolution.x * u_zoom);
-                    vec2 c = vec2(
+                    float scale = 4.0 / (u_resolution.x * u_zoomBase);
+                    scale *= u_zoomResidual;
+                    vec2 baseCoord = vec2(
                         u_center.x + (gl_FragCoord.x - 0.5 * u_resolution.x) * scale,
                         u_center.y + (gl_FragCoord.y - 0.5 * u_resolution.y) * scale
                     );
+                    vec2 c = baseCoord + u_centerResidual;
 
                     vec2 z = vec2(0.0);
                     int iterations = 0;
@@ -237,7 +247,9 @@ class MandelbrotViewer {
             this.uniforms = {
                 resolution: gl.getUniformLocation(program, 'u_resolution'),
                 center: gl.getUniformLocation(program, 'u_center'),
-                zoom: gl.getUniformLocation(program, 'u_zoom'),
+                centerResidual: gl.getUniformLocation(program, 'u_centerResidual'),
+                zoomBase: gl.getUniformLocation(program, 'u_zoomBase'),
+                zoomResidual: gl.getUniformLocation(program, 'u_zoomResidual'),
                 maxIterations: gl.getUniformLocation(program, 'u_maxIterations'),
                 colorScheme: gl.getUniformLocation(program, 'u_colorScheme'),
                 fractalType: gl.getUniformLocation(program, 'u_fractalType'),
@@ -274,6 +286,14 @@ class MandelbrotViewer {
     resizeCanvas(shouldRender = true) {
         this.canvas.width = window.innerWidth;
         this.canvas.height = window.innerHeight;
+        if (this.cpuCanvas) {
+            this.cpuCanvas.width = this.canvas.width;
+            this.cpuCanvas.height = this.canvas.height;
+        }
+        if (this.cpuBuffer) {
+            this.cpuBuffer.width = this.canvas.width;
+            this.cpuBuffer.height = this.canvas.height;
+        }
         if (this.gl) {
             this.gl.viewport(0, 0, this.canvas.width, this.canvas.height);
         }
@@ -456,17 +476,92 @@ class MandelbrotViewer {
 
     render() {
         this.updateIterations();
+        const useCpu = !this.gl || !this.program || this.zoom >= this.cpuFallbackZoom;
+        this.isCpuMode = useCpu;
+        if (useCpu) {
+            this.renderCpu();
+            this.setCpuCanvasVisibility(true);
+        } else {
+            this.renderWebGL();
+            this.setCpuCanvasVisibility(false);
+        }
+        this.updateRenderModeBadge();
+        this.updateZoomIndicator();
+    }
+
+    renderWebGL() {
         const gl = this.gl;
         if (!gl || !this.program) return;
         gl.useProgram(this.program);
-        gl.uniform2f(this.uniforms.center, this.centerX, this.centerY);
-        gl.uniform1f(this.uniforms.zoom, this.zoom);
+        const fround = Math.fround || ((value) => value);
+        const centerBaseX = fround(this.centerX);
+        const centerBaseY = fround(this.centerY);
+        const centerResidualX = this.centerX - centerBaseX;
+        const centerResidualY = this.centerY - centerBaseY;
+        const zoomBase = fround(this.zoom);
+        const zoomResidual = this.zoom / zoomBase;
+        gl.uniform2f(this.uniforms.center, centerBaseX, centerBaseY);
+        gl.uniform2f(this.uniforms.centerResidual, centerResidualX, centerResidualY);
+        gl.uniform1f(this.uniforms.zoomBase, zoomBase);
+        gl.uniform1f(this.uniforms.zoomResidual, zoomResidual);
         gl.uniform2f(this.uniforms.resolution, this.canvas.width, this.canvas.height);
         gl.uniform1i(this.uniforms.maxIterations, this.maxIterations);
         gl.uniform1i(this.uniforms.colorScheme, this.getColorSchemeIndex());
         gl.uniform1i(this.uniforms.fractalType, this.fractalType === 'burningship' ? 1 : 0);
         gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
-        this.updateZoomIndicator();
+    }
+
+    renderCpu() {
+        if (!this.cpuCtx) return;
+        const width = this.canvas.width;
+        const height = this.canvas.height;
+        if (this.cpuCanvas) {
+            this.cpuCanvas.width = width;
+            this.cpuCanvas.height = height;
+        }
+        if (this.cpuBuffer) {
+            this.cpuBuffer.width = width;
+            this.cpuBuffer.height = height;
+        }
+        const imageData = this.cpuBufferCtx.createImageData(width, height);
+        const data = imageData.data;
+        const scale = 4 / (this.canvas.width * this.zoom);
+        let offset = 0;
+        for (let y = 0; y < height; y++) {
+            const cy = this.centerY - (y - height / 2) * scale;
+            for (let x = 0; x < width; x++) {
+                const cx = this.centerX + (x - width / 2) * scale;
+                let zx = 0;
+                let zy = 0;
+                let escaped = false;
+                let iter = 0;
+                for (; iter < this.maxIterations; iter++) {
+                    if (this.fractalType === 'burningship') {
+                        zx = Math.abs(zx);
+                        zy = Math.abs(zy);
+                    }
+                    const xTemp = zx * zx - zy * zy + cx;
+                    zy = 2 * zx * zy + cy;
+                    zx = xTemp;
+                    if (zx * zx + zy * zy > 4) {
+                        escaped = true;
+                        break;
+                    }
+                }
+                let r = 0;
+                let g = 0;
+                let b = 0;
+                if (escaped) {
+                    const t = iter / this.maxIterations;
+                    ({ r, g, b } = this.getPaletteColor(t));
+                }
+                data[offset++] = r;
+                data[offset++] = g;
+                data[offset++] = b;
+                data[offset++] = 255;
+            }
+        }
+        this.cpuCtx.putImageData(imageData, 0, 0);
     }
 
     getColorSchemeIndex() {
@@ -485,7 +580,86 @@ class MandelbrotViewer {
     }
 
     updateZoomIndicator() {
-        document.getElementById('zoomIndicator').textContent = `Zoom: ${this.zoom.toFixed(1)}x`;
+        document.getElementById('zoomIndicator').textContent = this.isCpuMode ? `Zoom: ${this.zoom.toFixed(1)}x (CPU mode)` : `Zoom: ${this.zoom.toFixed(1)}x`;
+    }
+
+    updateRenderModeBadge() {
+        const badge = document.getElementById('renderMode');
+        if (!badge) return;
+        const mode = this.isCpuMode ? 'cpu' : 'webgl';
+        badge.dataset.mode = mode;
+        badge.textContent = this.isCpuMode ? 'CPU Renderer' : 'WebGL Renderer';
+    }
+
+    setCpuCanvasVisibility(visible) {
+        if (!this.cpuCanvas) return;
+        this.cpuCanvas.style.display = visible ? 'block' : 'none';
+    }
+
+    getPaletteColor(t) {
+        switch (this.getColorSchemeIndex()) {
+            case 1: {
+                return {
+                    r: Math.round(Math.min(1, t * 2.0) * 255),
+                    g: Math.round(Math.min(1, t * 1.0) * 255),
+                    b: Math.round(Math.min(1, t * 0.5) * 255)
+                };
+            }
+            case 2: {
+                return {
+                    r: Math.round(t * 0.3 * 255),
+                    g: Math.round(t * 0.5 * 255),
+                    b: Math.round((0.5 + t * 0.5) * 255)
+                };
+            }
+            case 3: {
+                return {
+                    r: Math.round((Math.sin(t * 12.566) * 0.5 + 0.5) * 255),
+                    g: Math.round((Math.sin(t * 18.849 + 2.0) * 0.5 + 0.5) * 255),
+                    b: Math.round((Math.sin(t * 25.132 + 4.0) * 0.5 + 0.5) * 255)
+                };
+            }
+            case 4: {
+                const v = Math.round((1.0 - t) * 255);
+                return { r: v, g: v, b: v };
+            }
+            case 5: {
+                const hue = t;
+                const saturation = 0.5;
+                const value = 0.8;
+                const rgb = this.hsvToRgb(hue, saturation, value);
+                return {
+                    r: Math.round(Math.floor(rgb.r * 4) / 4 * 255),
+                    g: Math.round(Math.floor(rgb.g * 4) / 4 * 255),
+                    b: Math.round(Math.floor(rgb.b * 4) / 4 * 255)
+                };
+            }
+            default: {
+                const rgb = this.hsvToRgb(t, 1.0, 1.0);
+                return {
+                    r: Math.round(rgb.r * 255),
+                    g: Math.round(rgb.g * 255),
+                    b: Math.round(rgb.b * 255)
+                };
+            }
+        }
+    }
+
+    hsvToRgb(h, s, v) {
+        const i = Math.floor(h * 6);
+        const f = h * 6 - i;
+        const p = v * (1 - s);
+        const q = v * (1 - f * s);
+        const t = v * (1 - (1 - f) * s);
+        switch (i % 6) {
+            case 0: return { r: v, g: t, b: p };
+            case 1: return { r: q, g: v, b: p };
+            case 2: return { r: p, g: v, b: t };
+            case 3: return { r: p, g: q, b: v };
+            case 4: return { r: t, g: p, b: v };
+            case 5: return { r: v, g: p, b: q };
+            default: return { r: v, g: v, b: v };
+        }
     }
 
     resetView() {
