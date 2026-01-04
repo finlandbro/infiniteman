@@ -554,7 +554,7 @@ class MandelbrotViewer {
         }
 
         if (!this.webglSupported) {
-            console.warn('WebGL not supported by this browser/device.');
+            console.warn('WebGL not supported by this browser/device (basic support check failed).');
             this.useWebGL = false;
             this.updateWebGLToggleUI();
             return;
@@ -563,7 +563,7 @@ class MandelbrotViewer {
         try {
             const gl = this.canvas.getContext('webgl', { antialias: false });
             if (!gl) {
-                console.warn('WebGL not supported, falling back to Canvas 2D.');
+                console.warn('WebGL getContext returned null (possibly blocked or blacklisted).');
                 return;
             }
             this.gl = gl;
