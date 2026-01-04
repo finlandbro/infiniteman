@@ -185,14 +185,7 @@ class MandelbrotViewer {
         const webglToggle = document.getElementById('webglToggle');
         if (webglToggle) {
             webglToggle.addEventListener('change', (e) => {
-                this.webglEnabled = e.target.checked;
-                if (this.webglEnabled && this.webglAvailable) {
-                    this.useWebGL = true;
-                } else {
-                    this.useWebGL = false;
-                }
-                this.updateWebGLToggleUI();
-                this.render();
+                this.setWebGLOption(e.target.checked);
             });
         }
         
@@ -506,7 +499,27 @@ class MandelbrotViewer {
         }
     }
 
+    setWebGLOption(enable) {
+        this.webglEnabled = enable;
+        if (enable) {
+            if (!this.webglAvailable) {
+                this.initWebGL();
+            }
+            this.useWebGL = this.webglAvailable;
+        } else {
+            this.useWebGL = false;
+        }
+        this.updateWebGLToggleUI();
+        this.render();
+    }
+
     initWebGL() {
+        if (this.webglAvailable && this.gl) {
+            this.useWebGL = this.webglEnabled;
+            this.updateWebGLToggleUI();
+            return;
+        }
+
         try {
             const gl = this.canvas.getContext('webgl', { antialias: false });
             if (!gl) {
