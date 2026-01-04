@@ -267,7 +267,8 @@
 
             #canvas {
                 display: block;
-                width: 100vw;
+                width: 100%;
+                height: 60vh;
             }
 
             .controls,
@@ -293,6 +294,9 @@
                 justify-content: center;
                 gap: 8px;
                 border-radius: 12px;
+                position: sticky;
+                bottom: 16px;
+                z-index: 5;
             }
 
             .tour-controls button {

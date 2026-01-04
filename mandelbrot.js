@@ -15,10 +15,16 @@ class MandelbrotViewer {
         this.initialPinchDistance = 0;
         this.initialZoom = 1;
         this.pinchCenter = { x: 0, y: 0 };
+        this.useWebGL = false;
+        this.gl = null;
+        this.program = null;
+        this.uniforms = {};
         
         // Canvas setup
         this.resizeCanvas();
         window.addEventListener('resize', () => this.resizeCanvas());
+
+        this.initWebGL();
         
         // Interaction state
         this.isDragging = false;
@@ -159,6 +165,9 @@ class MandelbrotViewer {
     resizeCanvas() {
         this.canvas.width = window.innerWidth;
         this.canvas.height = window.innerHeight;
+        if (this.useWebGL && this.gl) {
+            this.gl.viewport(0, 0, this.canvas.width, this.canvas.height);
+        }
         this.render();
     }
     
@@ -480,6 +489,15 @@ class MandelbrotViewer {
     
     render() {
         this.updateIterations();
+        if (this.useWebGL) {
+            this.renderWebGL();
+        } else {
+            this.renderCanvas();
+        }
+        this.updateZoomIndicator();
+    }
+
+    renderCanvas() {
         const width = this.canvas.width;
         const height = this.canvas.height;
         const imageData = this.ctx.createImageData(width, height);
@@ -504,7 +522,22 @@ class MandelbrotViewer {
         }
         
         this.ctx.putImageData(imageData, 0, 0);
-        this.updateZoomIndicator();
+    }
+    
+    renderWebGL() {
+        const gl = this.gl;
+        if (!gl || !this.program) return;
+        gl.useProgram(this.program);
+        gl.uniform2f(this.uniforms.center, this.centerX, this.centerY);
+        gl.uniform1f(this.uniforms.zoom, this.zoom);
+        gl.uniform2f(this.uniforms.resolution, this.canvas.width, this.canvas.height);
+        gl.uniform1i(this.uniforms.maxIterations, this.maxIterations);
+        gl.uniform1i(this.uniforms.colorScheme, this.getColorSchemeIndex());
+        gl.uniform1i(this.uniforms.fractalType, this.fractalType === 'burningship' ? 1 : 0);
+        const theme = document.body.getAttribute('data-theme') || 'light';
+        const themeIndex = theme === 'dark' ? 1 : theme === 'eink' ? 2 : 0;
+        gl.uniform1i(this.uniforms.theme, themeIndex);
+        gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
     }
     
     updateCoordinates(x, y) {
