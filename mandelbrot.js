@@ -16,8 +16,9 @@ class MandelbrotViewer {
         this.initialZoom = 1;
         this.pinchCenter = { x: 0, y: 0 };
         this.useWebGL = false;
+        this.webglSupported = this.checkWebGLSupport();
         this.webglAvailable = false;
-        this.webglEnabled = true;
+        this.webglEnabled = false;
         this.gl = null;
         this.program = null;
         this.uniforms = {};
@@ -26,6 +27,7 @@ class MandelbrotViewer {
         this.resizeCanvas();
         window.addEventListener('resize', () => this.resizeCanvas());
         this.initWebGL();
+        this.setupWebGLEvents();
         this.render();
 
         this.setupCollapsiblePanels();
@@ -194,6 +196,30 @@ class MandelbrotViewer {
         document.getElementById('tourStop').addEventListener('click', () => this.stopTour());
         document.getElementById('tourNext').addEventListener('click', () => this.nextTourLocation());
         document.getElementById('tourPrev').addEventListener('click', () => this.prevTourLocation());
+    }
+
+    setupWebGLEvents() {
+        this.canvas.addEventListener('webglcontextlost', (event) => {
+            event.preventDefault();
+            console.warn('WebGL context lost.');
+            this.webglAvailable = false;
+            this.useWebGL = false;
+            this.updateRenderIndicator();
+            this.updateWebGLToggleUI();
+            const status = document.getElementById('webglStatus');
+            if (status) {
+                status.textContent = 'WebGL context lost. Attempting recovery...';
+            }
+        });
+
+        this.canvas.addEventListener('webglcontextrestored', () => {
+            console.info('WebGL context restored, reinitializing...');
+            this.initWebGL();
+            if (this.webglEnabled && this.webglAvailable) {
+                this.useWebGL = true;
+            }
+            this.render();
+        });
     }
 
     setupCollapsiblePanels() {
@@ -502,6 +528,13 @@ class MandelbrotViewer {
     setWebGLOption(enable) {
         this.webglEnabled = enable;
         if (enable) {
+            if (!this.webglSupported) {
+                console.warn('WebGL reported as unsupported; staying on CPU renderer.');
+                this.webglEnabled = false;
+                this.useWebGL = false;
+                this.updateWebGLToggleUI();
+                return;
+            }
             if (!this.webglAvailable) {
                 this.initWebGL();
             }
@@ -516,6 +549,13 @@ class MandelbrotViewer {
     initWebGL() {
         if (this.webglAvailable && this.gl) {
             this.useWebGL = this.webglEnabled;
+            this.updateWebGLToggleUI();
+            return;
+        }
+
+        if (!this.webglSupported) {
+            console.warn('WebGL not supported by this browser/device.');
+            this.useWebGL = false;
             this.updateWebGLToggleUI();
             return;
         }
@@ -668,7 +708,6 @@ class MandelbrotViewer {
             console.warn('Failed to initialize WebGL, falling back to Canvas 2D.', error);
             this.useWebGL = false;
             this.webglAvailable = false;
-            this.webglEnabled = false;
             this.updateWebGLToggleUI();
         }
     }
@@ -756,15 +795,34 @@ class MandelbrotViewer {
         const toggle = document.getElementById('webglToggle');
         const status = document.getElementById('webglStatus');
         if (!toggle || !status) return;
-        if (!this.webglAvailable) {
-            toggle.checked = false;
-            toggle.disabled = true;
-            status.textContent = 'WebGL not supported';
-            this.useWebGL = false;
+        toggle.checked = this.webglEnabled;
+        toggle.disabled = !this.webglSupported;
+        if (!this.webglSupported) {
+            status.textContent = 'WebGL not supported in this browser/device';
+        } else if (this.webglEnabled && !this.webglAvailable) {
+            status.textContent = 'Attempting to initialize WebGL...';
+        } else if (this.webglEnabled && this.webglAvailable) {
+            status.textContent = 'WebGL enabled';
         } else {
-            toggle.disabled = false;
-            toggle.checked = this.webglEnabled;
-            status.textContent = this.webglEnabled ? 'WebGL enabled' : 'WebGL disabled';
+            status.textContent = 'WebGL disabled (CPU renderer)';
+        }
+    }
+
+    checkWebGLSupport() {
+        try {
+            const canvas = document.createElement('canvas');
+            const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+            if (!gl) {
+                return false;
+            }
+            const loseCtx = gl.getExtension('WEBGL_lose_context');
+            if (loseCtx) {
+                loseCtx.loseContext();
+            }
+            return true;
+        } catch (err) {
+            console.warn('WebGL support check failed:', err);
+            return false;
         }
     }
     
