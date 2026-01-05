@@ -560,10 +560,8 @@ class MandelbrotViewer {
             this.renderWebGL();
             this.setCpuCanvasVisibility(false);
         } else {
-            const shouldShowCpuFrame = this.hasCpuFrame && !this.isInteracting;
-            if (this.isInteracting || !this.hasCpuFrame) {
-                this.renderWebGL();
-            }
+            this.renderWebGL();
+            const shouldShowCpuFrame = this.hasCpuFrame;
             this.setCpuCanvasVisibility(shouldShowCpuFrame);
             if (!this.isInteracting) {
                 this.beginCpuRender();
