@@ -5,6 +5,11 @@ class MandelbrotViewer {
         this.cpuCtx = this.cpuCanvas ? this.cpuCanvas.getContext('2d') : null;
         this.cpuBuffer = document.createElement('canvas');
         this.cpuBufferCtx = this.cpuBuffer.getContext('2d');
+        this.zoomValueEl = document.getElementById('zoomValue');
+        this.cpuIndicatorEl = document.getElementById('cpuIndicator');
+        this.cpuRenderToken = 0;
+        this.cpuRenderHandle = null;
+        this.isCpuRendering = false;
         
         // View parameters
         this.centerX = -0.5;
@@ -380,9 +385,11 @@ class MandelbrotViewer {
         if (e.button === 0) {
             this.isDragging = true;
             this.isInteracting = true;
+            this.cancelCpuRender();
             this.dragStartX = e.clientX;
             this.dragStartY = e.clientY;
         } else if (e.button === 2) {
+            this.cancelCpuRender();
             this.zoomAt(e.clientX, e.clientY, 0.5);
         }
     }
@@ -410,6 +417,7 @@ class MandelbrotViewer {
     handleWheel(e) {
         e.preventDefault();
         this.isInteracting = true;
+        this.cancelCpuRender();
         this.zoomAt(e.clientX, e.clientY, e.deltaY > 0 ? 0.9 : 1.1);
         
         // Clear previous timer and set a new one to detect end of wheeling
@@ -422,6 +430,7 @@ class MandelbrotViewer {
     }
 
     handleTouchStart(e) {
+        this.cancelCpuRender();
         this.isInteracting = true;
         if (e.touches.length === 1 && !this.isPinching) {
             this.isDragging = true;
@@ -434,6 +443,7 @@ class MandelbrotViewer {
             this.initialZoom = this.zoom;
             this.pinchCenter = this.getTouchCenter(e.touches);
         }
+        this.updateCenterCoordinates();
     }
 
     handleTouchMove(e) {
@@ -444,6 +454,7 @@ class MandelbrotViewer {
             const targetZoom = this.initialZoom * (currentDistance / this.initialPinchDistance);
             const center = this.getTouchCenter(e.touches);
             this.zoomAt(center.x, center.y, targetZoom / this.zoom);
+            this.updateCenterCoordinates();
         } else if (e.touches.length === 1 && this.isDragging) {
             const scale = 4 / (this.canvas.width * this.zoom);
             this.centerX -= (e.touches[0].clientX - this.dragStartX) * scale;
@@ -451,6 +462,7 @@ class MandelbrotViewer {
             this.dragStartX = e.touches[0].clientX;
             this.dragStartY = e.touches[0].clientY;
             this.render();
+            this.updateCenterCoordinates();
         }
     }
 
@@ -466,6 +478,7 @@ class MandelbrotViewer {
             this.dragStartX = e.touches[0].clientX;
             this.dragStartY = e.touches[0].clientY;
         }
+        this.updateCenterCoordinates();
     }
 
     getTouchDistance(touches) {
@@ -509,14 +522,43 @@ class MandelbrotViewer {
         
         this.isCpuMode = useCpu;
         if (useCpu) {
-            this.renderCpu();
-            this.setCpuCanvasVisibility(true);
+            this.beginCpuRender();
         } else {
             this.renderWebGL();
             this.setCpuCanvasVisibility(false);
         }
         this.updateRenderModeBadge();
         this.updateZoomIndicator();
+    }
+
+    beginCpuRender() {
+        const token = ++this.cpuRenderToken;
+        this.isCpuRendering = true;
+        this.setCpuCanvasVisibility(false);
+        this.updateZoomIndicator();
+        if (this.cpuRenderHandle) {
+            clearTimeout(this.cpuRenderHandle);
+            this.cpuRenderHandle = null;
+        }
+        this.cpuRenderHandle = setTimeout(() => {
+            this.cpuRenderHandle = null;
+            this.renderCpu(token);
+        }, 0);
+    }
+
+    cancelCpuRender() {
+        this.cpuRenderToken++;
+        if (this.cpuRenderHandle) {
+            clearTimeout(this.cpuRenderHandle);
+            this.cpuRenderHandle = null;
+        }
+        if (this.isCpuMode) {
+            this.setCpuCanvasVisibility(false);
+        }
+        if (this.isCpuRendering) {
+            this.isCpuRendering = false;
+            this.updateZoomIndicator();
+        }
     }
 
     renderWebGL() {
@@ -541,8 +583,11 @@ class MandelbrotViewer {
         gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
     }
 
-    renderCpu() {
+    renderCpu(token) {
         if (!this.cpuCtx) return;
+        if (token !== this.cpuRenderToken) return;
+        this.isCpuRendering = true;
+        this.updateZoomIndicator();
         const width = this.canvas.width;
         const height = this.canvas.height;
         if (this.cpuCanvas) {
@@ -557,41 +602,51 @@ class MandelbrotViewer {
         const data = imageData.data;
         const scale = 4 / (this.canvas.width * this.zoom);
         let offset = 0;
-        for (let y = 0; y < height; y++) {
-            const cy = this.centerY - (y - height / 2) * scale;
-            for (let x = 0; x < width; x++) {
-                const cx = this.centerX + (x - width / 2) * scale;
-                let zx = 0;
-                let zy = 0;
-                let escaped = false;
-                let iter = 0;
-                for (; iter < this.maxIterations; iter++) {
-                    if (this.fractalType === 'burningship') {
-                        zx = Math.abs(zx);
-                        zy = Math.abs(zy);
+        try {
+            for (let y = 0; y < height; y++) {
+                if (token !== this.cpuRenderToken) return;
+                const cy = this.centerY - (y - height / 2) * scale;
+                for (let x = 0; x < width; x++) {
+                    if (token !== this.cpuRenderToken) return;
+                    const cx = this.centerX + (x - width / 2) * scale;
+                    let zx = 0;
+                    let zy = 0;
+                    let escaped = false;
+                    let iter = 0;
+                    for (; iter < this.maxIterations; iter++) {
+                        if (this.fractalType === 'burningship') {
+                            zx = Math.abs(zx);
+                            zy = Math.abs(zy);
+                        }
+                        const xTemp = zx * zx - zy * zy + cx;
+                        zy = 2 * zx * zy + cy;
+                        zx = xTemp;
+                        if (zx * zx + zy * zy > 4) {
+                            escaped = true;
+                            break;
+                        }
                     }
-                    const xTemp = zx * zx - zy * zy + cx;
-                    zy = 2 * zx * zy + cy;
-                    zx = xTemp;
-                    if (zx * zx + zy * zy > 4) {
-                        escaped = true;
-                        break;
+                    let r = 0;
+                    let g = 0;
+                    let b = 0;
+                    if (escaped) {
+                        const t = iter / this.maxIterations;
+                        ({ r, g, b } = this.getPaletteColor(t));
                     }
+                    data[offset++] = r;
+                    data[offset++] = g;
+                    data[offset++] = b;
+                    data[offset++] = 255;
                 }
-                let r = 0;
-                let g = 0;
-                let b = 0;
-                if (escaped) {
-                    const t = iter / this.maxIterations;
-                    ({ r, g, b } = this.getPaletteColor(t));
-                }
-                data[offset++] = r;
-                data[offset++] = g;
-                data[offset++] = b;
-                data[offset++] = 255;
+            }
+            this.cpuCtx.putImageData(imageData, 0, 0);
+            this.setCpuCanvasVisibility(true);
+        } finally {
+            if (token === this.cpuRenderToken) {
+                this.isCpuRendering = false;
+                this.updateZoomIndicator();
             }
         }
-        this.cpuCtx.putImageData(imageData, 0, 0);
     }
 
     getColorSchemeIndex() {
@@ -609,8 +664,19 @@ class MandelbrotViewer {
         document.getElementById('coordinates').textContent = `X: ${x.toFixed(6)} | Y: ${y.toFixed(6)} | Zoom: ${this.zoom.toFixed(1)}x`;
     }
 
+    updateCenterCoordinates() {
+        this.updateCoordinates(this.centerX, this.centerY);
+    }
+
     updateZoomIndicator() {
-        document.getElementById('zoomIndicator').textContent = `Zoom: ${this.zoom.toFixed(1)}x`;
+        if (this.zoomValueEl) {
+            this.zoomValueEl.textContent = `Zoom: ${this.zoom.toFixed(1)}x`;
+        }
+        if (this.cpuIndicatorEl) {
+            const showCpu = this.isCpuRendering;
+            this.cpuIndicatorEl.classList.toggle('visible', showCpu);
+            this.cpuIndicatorEl.setAttribute('aria-hidden', (!showCpu).toString());
+        }
     }
 
     updateRenderModeBadge() {

@@ -384,6 +384,38 @@
             font-size: 14px;
             backdrop-filter: blur(10px);
             color: var(--text-color);
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .cpu-indicator {
+            display: none;
+            align-items: center;
+            gap: 6px;
+            padding: 2px 10px;
+            border-radius: 999px;
+            background: rgba(255, 112, 67, 0.15);
+            border: 1px solid #ff7043;
+            color: #ff7043;
+            font-size: 11px;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+            font-weight: 600;
+            animation: pulse 1.6s ease-in-out infinite;
+        }
+
+        .cpu-indicator::before {
+            content: '';
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: currentColor;
+            box-shadow: 0 0 6px currentColor;
+        }
+
+        .cpu-indicator.visible {
+            display: inline-flex;
         }
 
         .render-mode-badge {
@@ -585,7 +617,8 @@
     </div>
     
     <div class="zoom-indicator" id="zoomIndicator">
-        Zoom: 1.0x
+        <span id="zoomValue">Zoom: 1.0x</span>
+        <span class="cpu-indicator" id="cpuIndicator" aria-live="polite" aria-hidden="true">CPU</span>
     </div>
     <div class="render-mode-badge" id="renderMode" data-mode="webgl">WebGL Renderer</div>
 
