@@ -645,6 +645,7 @@ class MandelbrotViewer {
         const data = imageData.data;
         const scale = 4 / (this.canvas.width * this.zoom);
         let offset = 0;
+        let completed = false;
         try {
             for (let y = 0; y < height; y++) {
                 if (token !== this.cpuRenderToken) return;
@@ -689,8 +690,12 @@ class MandelbrotViewer {
             this.cpuFrameZoom = this.zoom;
             this.setCpuCanvasVisibility(true);
             this.updateCpuFrameTransform();
+            completed = true;
         } finally {
-            if (token === this.cpuRenderToken) {
+            if (completed && token === this.cpuRenderToken) {
+                this.isCpuRendering = false;
+                this.updateZoomIndicator();
+            } else if (!completed) {
                 this.isCpuRendering = false;
                 this.updateZoomIndicator();
             }
