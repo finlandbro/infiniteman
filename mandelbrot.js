@@ -10,11 +10,16 @@ class MandelbrotViewer {
         this.cpuRenderToken = 0;
         this.cpuRenderHandle = null;
         this.isCpuRendering = false;
+        this.hasCpuFrame = false;
         
         // View parameters
         this.centerX = -0.5;
         this.centerY = 0;
         this.zoom = 1;
+        this.cpuFrameCenterX = this.centerX;
+        this.cpuFrameCenterY = this.centerY;
+        this.cpuFrameZoom = this.zoom;
+        this.cpuFramePivotScreen = { x: this.canvas.width / 2, y: this.canvas.height / 2 };
         this.baseIterations = 100;
         this.maxIterations = 100;
         this.adaptiveIterations = true;
@@ -185,17 +190,36 @@ class MandelbrotViewer {
                     return c.z * mix(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
                 }
 
-                vec3 palette(float t, int scheme) {
-                    if (scheme == 1) return vec3(min(1.0, t * 2.0), min(1.0, t * 1.0), min(1.0, t * 0.5)); // fire
-                    if (scheme == 2) return vec3(t * 0.3, t * 0.5, 0.5 + t * 0.5); // ocean
-                    if (scheme == 3) return vec3(sin(t * 12.566) * 0.5 + 0.5, sin(t * 18.849 + 2.0) * 0.5 + 0.5, sin(t * 25.132 + 4.0) * 0.5 + 0.5); // psychedelic
-                    if (scheme == 4) return vec3(1.0 - t); // eink monochrome
-                    if (scheme == 5) {
-                        // eink color: muted tones with posterization
-                        vec3 c1 = hsv2rgb(vec3(t, 0.5, 0.8));
-                        return floor(c1 * 4.0) / 4.0;
+                vec3 einkColorPalette(float t) {
+                    vec3 c1 = vec3(0.06, 0.14, 0.18);
+                    vec3 c2 = vec3(0.33, 0.30, 0.24);
+                    vec3 c3 = vec3(0.63, 0.47, 0.23);
+                    vec3 c4 = vec3(0.90, 0.86, 0.68);
+                    float clampedT = clamp(t, 0.0, 1.0);
+                    float segments = 3.0;
+                    float scaled = clampedT * segments;
+                    float segment = floor(scaled);
+                    float localT = scaled - segment;
+                    if (segment >= segments) {
+                        segment = segments - 1.0;
+                        localT = 1.0;
                     }
-                    return hsv2rgb(vec3(t, 1.0, 1.0)); // classic
+                    if (segment < 1.0) return mix(c1, c2, localT);
+                    if (segment < 2.0) return mix(c2, c3, localT);
+                    return mix(c3, c4, localT);
+                }
+
+                vec3 palette(float t, int scheme) {
+                    if (scheme == 1) return vec3(min(1.0, t * 2.0), min(1.0, t * 1.0), min(1.0, t * 0.5));
+                    if (scheme == 2) return vec3(t * 0.3, t * 0.5, 0.5 + t * 0.5);
+                    if (scheme == 3) return vec3(
+                        sin(t * 12.566) * 0.5 + 0.5,
+                        sin(t * 18.849 + 2.0) * 0.5 + 0.5,
+                        sin(t * 25.132 + 4.0) * 0.5 + 0.5
+                    );
+                    if (scheme == 4) return vec3(1.0 - t);
+                    if (scheme == 5) return einkColorPalette(t);
+                    return hsv2rgb(vec3(t, 1.0, 1.0));
                 }
 
                 void main() {
@@ -216,7 +240,11 @@ class MandelbrotViewer {
                         float x = z.x * z.x - z.y * z.y + c.x;
                         float y = 2.0 * z.x * z.y + c.y;
                         z = vec2(x, y);
-                        if (dot(z, z) > 4.0) { escaped = true; iterations = i; break; }
+                        if (dot(z, z) > 4.0) {
+                            escaped = true;
+                            iterations = i;
+                            break;
+                        }
                     }
 
                     vec3 color;
@@ -301,6 +329,12 @@ class MandelbrotViewer {
         if (this.cpuBuffer) {
             this.cpuBuffer.width = this.canvas.width;
             this.cpuBuffer.height = this.canvas.height;
+        }
+        if (this.cpuBufferCtx) {
+            this.cpuBufferCtx.imageSmoothingEnabled = true;
+        }
+        if (this.cpuCtx) {
+            this.cpuCtx.imageSmoothingEnabled = true;
         }
         if (this.gl) {
             this.gl.viewport(0, 0, this.canvas.width, this.canvas.height);
@@ -517,24 +551,35 @@ class MandelbrotViewer {
 
     render() {
         this.updateIterations();
-        // Force WebGL during interaction, otherwise check fallback zoom
-        const useCpu = (!this.gl || !this.program || this.zoom >= this.cpuFallbackZoom) && !this.isInteracting;
-        
-        this.isCpuMode = useCpu;
-        if (useCpu) {
-            this.beginCpuRender();
-        } else {
+        const needsCpu = (!this.gl || !this.program || this.zoom >= this.cpuFallbackZoom);
+        this.isCpuMode = needsCpu;
+
+        if (!needsCpu) {
+            this.cancelCpuRender();
+            this.hasCpuFrame = false;
             this.renderWebGL();
             this.setCpuCanvasVisibility(false);
+        } else {
+            const shouldShowCpuFrame = this.hasCpuFrame && !this.isInteracting;
+            if (this.isInteracting || !this.hasCpuFrame) {
+                this.renderWebGL();
+            }
+            this.setCpuCanvasVisibility(shouldShowCpuFrame);
+            if (!this.isInteracting) {
+                this.beginCpuRender();
+            }
         }
         this.updateRenderModeBadge();
         this.updateZoomIndicator();
+        this.updateCpuFrameTransform();
     }
 
     beginCpuRender() {
         const token = ++this.cpuRenderToken;
         this.isCpuRendering = true;
-        this.setCpuCanvasVisibility(false);
+        if (!this.hasCpuFrame) {
+            this.setCpuCanvasVisibility(false);
+        }
         this.updateZoomIndicator();
         if (this.cpuRenderHandle) {
             clearTimeout(this.cpuRenderHandle);
@@ -552,7 +597,7 @@ class MandelbrotViewer {
             clearTimeout(this.cpuRenderHandle);
             this.cpuRenderHandle = null;
         }
-        if (this.isCpuMode) {
+        if (this.isCpuMode && !this.hasCpuFrame) {
             this.setCpuCanvasVisibility(false);
         }
         if (this.isCpuRendering) {
@@ -640,13 +685,34 @@ class MandelbrotViewer {
                 }
             }
             this.cpuCtx.putImageData(imageData, 0, 0);
+            this.hasCpuFrame = true;
+            this.cpuFrameCenterX = this.centerX;
+            this.cpuFrameCenterY = this.centerY;
+            this.cpuFrameZoom = this.zoom;
             this.setCpuCanvasVisibility(true);
+            this.updateCpuFrameTransform();
         } finally {
             if (token === this.cpuRenderToken) {
                 this.isCpuRendering = false;
                 this.updateZoomIndicator();
             }
         }
+    }
+
+    updateCpuFrameTransform() {
+        if (!this.cpuCanvas) return;
+        if (!this.hasCpuFrame) {
+            this.cpuCanvas.style.transform = '';
+            return;
+        }
+        const width = this.canvas.width;
+        const height = this.canvas.height;
+        const scaleRatio = this.zoom / this.cpuFrameZoom;
+        const currentScale = 4 / (width * this.zoom);
+        const tx = (1 - scaleRatio) * (width / 2) + (this.cpuFrameCenterX - this.centerX) / currentScale;
+        const ty = (1 - scaleRatio) * (height / 2) + (this.centerY - this.cpuFrameCenterY) / currentScale;
+        this.cpuCanvas.style.transformOrigin = '0 0';
+        this.cpuCanvas.style.transform = `matrix(${scaleRatio}, 0, 0, ${scaleRatio}, ${tx}, ${ty})`;
     }
 
     getColorSchemeIndex() {
@@ -692,6 +758,28 @@ class MandelbrotViewer {
         this.cpuCanvas.style.display = visible ? 'block' : 'none';
     }
 
+    getEinkColorPalette(t) {
+        const clampedT = Math.max(0, Math.min(1, t));
+        const stops = [
+            { start: [15, 36, 46], end: [84, 77, 61] },
+            { start: [84, 77, 61], end: [161, 120, 59] },
+            { start: [161, 120, 59], end: [230, 219, 173] }
+        ];
+        let scaled = clampedT * stops.length;
+        let segment = Math.floor(scaled);
+        let localT = scaled - segment;
+        if (segment >= stops.length) {
+            segment = stops.length - 1;
+            localT = 1;
+        }
+        const { start, end } = stops[segment];
+        return {
+            r: Math.round(start[0] + (end[0] - start[0]) * localT),
+            g: Math.round(start[1] + (end[1] - start[1]) * localT),
+            b: Math.round(start[2] + (end[2] - start[2]) * localT)
+        };
+    }
+
     getPaletteColor(t) {
         switch (this.getColorSchemeIndex()) {
             case 1: {
@@ -720,15 +808,7 @@ class MandelbrotViewer {
                 return { r: v, g: v, b: v };
             }
             case 5: {
-                const hue = t;
-                const saturation = 0.5;
-                const value = 0.8;
-                const rgb = this.hsvToRgb(hue, saturation, value);
-                return {
-                    r: Math.round(Math.floor(rgb.r * 4) / 4 * 255),
-                    g: Math.round(Math.floor(rgb.g * 4) / 4 * 255),
-                    b: Math.round(Math.floor(rgb.b * 4) / 4 * 255)
-                };
+                return this.getEinkColorPalette(t);
             }
             default: {
                 const rgb = this.hsvToRgb(t, 1.0, 1.0);
