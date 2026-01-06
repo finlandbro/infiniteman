@@ -2,11 +2,16 @@ class MandelbrotViewer {
     constructor() {
         this.canvas = document.getElementById('canvas');
         this.cpuCanvas = document.getElementById('cpuCanvas');
-        this.cpuCtx = this.cpuCanvas ? this.cpuCanvas.getContext('2d') : null;
+        this.cpuCtx = this.cpuCanvas?.getContext('2d');
+        this.cpuCanvasProgress = document.getElementById('cpuCanvasProgress');
+        this.cpuCtxProgress = this.cpuCanvasProgress?.getContext('2d');
         this.cpuBuffer = document.createElement('canvas');
         this.cpuBufferCtx = this.cpuBuffer.getContext('2d');
         this.zoomValueEl = document.getElementById('zoomValue');
         this.cpuIndicatorEl = document.getElementById('cpuIndicator');
+        this.progressContainerEl = document.getElementById('progressContainer');
+        this.progressBarEl = document.getElementById('progressBar');
+        this.progressTextEl = document.getElementById('progressText');
         this.cpuRenderToken = 0;
         this.cpuRenderHandle = null;
         this.isCpuRendering = false;
@@ -39,6 +44,8 @@ class MandelbrotViewer {
         this.program = null;
         this.uniforms = {};
         this.cpuFallbackZoom = 100000;
+        this.highPrecisionCpuThreshold = 1000000;
+        this.isHighPrecisionCpuActive = false;
         this.isCpuMode = false;
         this.isInteracting = false;
         this.renderTimer = null;
@@ -135,6 +142,14 @@ class MandelbrotViewer {
                 y: 0.1102,
                 zoom: 10000,
                 description: "Extreme zoom showing infinite detail"
+            },
+            {
+                name: "Turtle Cove",
+                type: "mandelbrot",
+                x: -0.10155,
+                y: 0.95632,
+                zoom: 750000,
+                description: "Mini-Mandelbrot region whose outline forms a turtle shell"
             }
         ];
         
@@ -296,6 +311,99 @@ class MandelbrotViewer {
         }
     }
 
+    createKahanStepper(initialValue, delta) {
+        return {
+            value: initialValue,
+            compensation: 0,
+            delta,
+            current() {
+                return this.value;
+            },
+            advance() {
+                const y = this.delta - this.compensation;
+                const t = this.value + y;
+                this.compensation = (t - this.value) - y;
+                this.value = t;
+            }
+        };
+    }
+
+    buildCoordinateArray(start, delta, length) {
+        const coords = new Array(length);
+        const stepper = this.createKahanStepper(start, delta);
+        for (let i = 0; i < length; i++) {
+            coords[i] = stepper.current();
+            stepper.advance();
+        }
+        return coords;
+    }
+
+    buildDoubleDoubleCoordinateArray(startDD, deltaDD, length) {
+        if (typeof DoubleDouble === 'undefined') return [];
+        const coords = new Array(length);
+        let current = startDD.clone();
+        for (let i = 0; i < length; i++) {
+            coords[i] = current.clone();
+            current = current.add(deltaDD);
+        }
+        return coords;
+    }
+
+    buildCenterOutOrder(length) {
+        const order = [];
+        const center = Math.floor(length / 2);
+        order.push(center);
+        for (let offset = 1; offset < length; offset++) {
+            const up = center - offset;
+            const down = center + offset;
+            if (up >= 0) order.push(up);
+            if (down < length) order.push(down);
+        }
+        return order;
+    }
+
+    updateProgressFrame(imageData, centerX, centerY, zoom) {
+        if (!this.cpuCtxProgress || !this.cpuCanvasProgress) return;
+        
+        if (this.cpuCanvasProgress.width !== imageData.width || this.cpuCanvasProgress.height !== imageData.height) {
+            this.cpuCanvasProgress.width = imageData.width;
+            this.cpuCanvasProgress.height = imageData.height;
+        }
+
+        this.cpuCtxProgress.putImageData(imageData, 0, 0);
+        
+        this.progressFrameCenterX = centerX;
+        this.progressFrameCenterY = centerY;
+        this.progressFrameZoom = zoom;
+        
+        this.cpuCanvasProgress.classList.add('visible');
+        this.updateCpuFrameTransform();
+    }
+
+    commitFinalCpuFrame(imageData, centerX, centerY, zoom) {
+        if (!this.cpuCtx || !this.cpuCanvas) return;
+        
+        if (this.cpuCanvas.width !== imageData.width || this.cpuCanvas.height !== imageData.height) {
+            this.cpuCanvas.width = imageData.width;
+            this.cpuCanvas.height = imageData.height;
+        }
+
+        this.cpuCtx.putImageData(imageData, 0, 0);
+        
+        this.cpuFrameCenterX = centerX;
+        this.cpuFrameCenterY = centerY;
+        this.cpuFrameZoom = zoom;
+        this.hasCpuFrame = true;
+        
+        // Hide progress canvas now that stable is updated
+        if (this.cpuCanvasProgress) {
+            this.cpuCanvasProgress.classList.remove('visible');
+        }
+        
+        this.cpuCanvas.classList.add('visible');
+        this.updateCpuFrameTransform();
+    }
+
     compileShader(type, source) {
         const gl = this.gl;
         const shader = gl.createShader(type);
@@ -383,7 +491,9 @@ class MandelbrotViewer {
         const hudPanel = document.getElementById('commandPanel');
         const hudCollapseBtn = document.getElementById('hudCollapseBtn');
         if (hudPanel && hudCollapseBtn) {
-            hudCollapseBtn.addEventListener('click', () => {
+            hudCollapseBtn.addEventListener('click', (e) => {
+                console.log('HUD collapse button clicked');
+                e.stopPropagation();
                 const isCollapsed = hudPanel.classList.toggle('hud-collapsed');
                 hudCollapseBtn.setAttribute('aria-expanded', (!isCollapsed).toString());
                 hudCollapseBtn.textContent = isCollapsed ? 'HUD' : '−';
@@ -405,9 +515,15 @@ class MandelbrotViewer {
 
     setupCollapsiblePanels() {
         document.querySelectorAll('.collapse-btn').forEach((btn) => {
-            const panel = document.getElementById(btn.dataset.target);
-            if (!panel) return;
-            btn.addEventListener('click', () => {
+            const panelId = btn.dataset.target;
+            const panel = document.getElementById(panelId);
+            if (!panel) {
+                console.warn(`Collapsible panel target not found: ${panelId}`);
+                return;
+            }
+            btn.addEventListener('click', (e) => {
+                console.log(`Collapsible section button clicked: ${panelId}`);
+                e.stopPropagation();
                 const isCollapsed = panel.classList.toggle('collapsed');
                 btn.setAttribute('aria-expanded', (!isCollapsed).toString());
                 btn.textContent = isCollapsed ? '+' : '−';
@@ -553,14 +669,25 @@ class MandelbrotViewer {
         this.updateIterations();
         const needsCpu = (!this.gl || !this.program || this.zoom >= this.cpuFallbackZoom);
         this.isCpuMode = needsCpu;
+        this.isHighPrecisionCpuActive = needsCpu && this.shouldUseHighPrecisionCpu();
 
         if (!needsCpu) {
             this.cancelCpuRender();
             this.hasCpuFrame = false;
             this.renderWebGL();
             this.setCpuCanvasVisibility(false);
+            if (this.canvas) this.canvas.style.opacity = '1';
         } else {
-            this.renderWebGL();
+            // If we already have a CPU frame, we use it as the preview.
+            // We only render WebGL if we DON'T have a CPU frame yet (handoff phase).
+            if (!this.hasCpuFrame) {
+                this.renderWebGL();
+                if (this.canvas) this.canvas.style.opacity = '1';
+            } else {
+                // Hide WebGL artifacts when we have a valid high-precision preview
+                if (this.canvas) this.canvas.style.opacity = '0';
+            }
+            
             const shouldShowCpuFrame = this.hasCpuFrame;
             this.setCpuCanvasVisibility(shouldShowCpuFrame);
             if (!this.isInteracting) {
@@ -570,6 +697,7 @@ class MandelbrotViewer {
         this.updateRenderModeBadge();
         this.updateZoomIndicator();
         this.updateCpuFrameTransform();
+        this.updatePrecisionBadge();
     }
 
     beginCpuRender() {
@@ -626,96 +754,319 @@ class MandelbrotViewer {
         gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
     }
 
-    renderCpu(token) {
+    async renderCpu(token) {
         if (!this.cpuCtx) return;
         if (token !== this.cpuRenderToken) return;
-        this.isCpuRendering = true;
-        this.updateZoomIndicator();
+        
         const width = this.canvas.width;
         const height = this.canvas.height;
-        if (this.cpuCanvas) {
-            this.cpuCanvas.width = width;
-            this.cpuCanvas.height = height;
+        if (width === 0 || height === 0) {
+            console.warn('[CPU Render] Canvas dimensions are 0, skipping render.');
+            this.isCpuRendering = false;
+            this.updateZoomIndicator();
+            return;
         }
+
+        this.isCpuRendering = true;
+        const totalPixels = width * height;
+        console.log(`[CPU Render] Starting render: ${width}x${height} (${totalPixels.toLocaleString()} pixels)`);
+        
+        // Ensure UI updates to show 0%
+        this.updateProgressBar(0, 0, totalPixels);
+        this.updateZoomIndicator();
+        
+        // Clear progress canvas at start of new render
+        if (this.cpuCtxProgress) {
+            this.cpuCtxProgress.clearRect(0, 0, this.cpuCanvasProgress.width, this.cpuCanvasProgress.height);
+            this.cpuCanvasProgress.classList.remove('visible');
+        }
+        
+        // Yield to browser to show initial progress
+        await new Promise(resolve => requestAnimationFrame(resolve));
+
         if (this.cpuBuffer) {
             this.cpuBuffer.width = width;
             this.cpuBuffer.height = height;
         }
+        
         const imageData = this.cpuBufferCtx.createImageData(width, height);
-        const data = imageData.data;
-        const scale = 4 / (this.canvas.width * this.zoom);
-        let offset = 0;
-        let completed = false;
+        const useHighPrecision = this.shouldUseHighPrecisionCpu();
+        
+        const renderCenterX = this.centerX;
+        const renderCenterY = this.centerY;
+        const renderZoom = this.zoom;
+
         try {
-            for (let y = 0; y < height; y++) {
-                if (token !== this.cpuRenderToken) return;
-                const cy = this.centerY - (y - height / 2) * scale;
-                for (let x = 0; x < width; x++) {
-                    if (token !== this.cpuRenderToken) return;
-                    const cx = this.centerX + (x - width / 2) * scale;
-                    let zx = 0;
-                    let zy = 0;
-                    let escaped = false;
-                    let iter = 0;
-                    for (; iter < this.maxIterations; iter++) {
-                        if (this.fractalType === 'burningship') {
-                            zx = Math.abs(zx);
-                            zy = Math.abs(zy);
-                        }
-                        const xTemp = zx * zx - zy * zy + cx;
-                        zy = 2 * zx * zy + cy;
-                        zx = xTemp;
-                        if (zx * zx + zy * zy > 4) {
-                            escaped = true;
-                            break;
-                        }
-                    }
-                    let r = 0;
-                    let g = 0;
-                    let b = 0;
-                    if (escaped) {
-                        const t = iter / this.maxIterations;
-                        ({ r, g, b } = this.getPaletteColor(t));
-                    }
-                    data[offset++] = r;
-                    data[offset++] = g;
-                    data[offset++] = b;
-                    data[offset++] = 255;
-                }
+            const populated = useHighPrecision
+                ? await this.populateCpuBufferHighPrecisionAsync(token, imageData, width, height, renderCenterX, renderCenterY, renderZoom)
+                : await this.populateCpuBufferStandardAsync(token, imageData, width, height, renderCenterX, renderCenterY, renderZoom);
+            
+            if (!populated || token !== this.cpuRenderToken) {
+                console.log('[CPU Render] Render cancelled or failed.');
+                return;
             }
-            this.cpuCtx.putImageData(imageData, 0, 0);
-            this.hasCpuFrame = true;
-            this.cpuFrameCenterX = this.centerX;
-            this.cpuFrameCenterY = this.centerY;
-            this.cpuFrameZoom = this.zoom;
-            this.setCpuCanvasVisibility(true);
-            this.updateCpuFrameTransform();
-            completed = true;
+            
+            this.commitFinalCpuFrame(imageData, renderCenterX, renderCenterY, renderZoom);
+            this.updatePrecisionBadge();
+            console.log('[CPU Render] Render completed successfully.');
+        } catch (e) {
+            console.error('[CPU Render] Error during render:', e);
         } finally {
-            if (completed && token === this.cpuRenderToken) {
+            if (token === this.cpuRenderToken) {
                 this.isCpuRendering = false;
                 this.updateZoomIndicator();
-            } else if (!completed) {
-                this.isCpuRendering = false;
-                this.updateZoomIndicator();
+                // Ensure progress canvas is hidden after completion
+                if (this.cpuCanvasProgress) {
+                    this.cpuCanvasProgress.classList.remove('visible');
+                }
             }
         }
     }
 
-    updateCpuFrameTransform() {
-        if (!this.cpuCanvas) return;
-        if (!this.hasCpuFrame) {
-            this.cpuCanvas.style.transform = '';
-            return;
+    shouldUseHighPrecisionCpu() {
+        return typeof DoubleDouble !== 'undefined' && this.zoom >= this.highPrecisionCpuThreshold;
+    }
+
+    async buildDoubleDoubleCoordinateArrayAsync(startDD, deltaDD, length, token, label) {
+        if (typeof DoubleDouble === 'undefined') return [];
+        const coords = new Array(length);
+        let current = startDD.clone();
+        for (let i = 0; i < length; i++) {
+            if (token !== this.cpuRenderToken) return [];
+            coords[i] = current.clone();
+            current = current.add(deltaDD);
+            
+            // Yield and update UI every 200 coordinates
+            if (i % 200 === 0) {
+                if (this.progressTextEl) {
+                    this.progressTextEl.textContent = `Setting up ${label}: ${Math.round((i / length) * 100)}%`;
+                }
+                await new Promise(resolve => requestAnimationFrame(resolve));
+            }
         }
+        return coords;
+    }
+
+    async populateCpuBufferStandardAsync(token, imageData, width, height, renderCenterX, renderCenterY, renderZoom) {
+        console.log(`[CPU Render] Standard precision mode active.`);
+        const data = imageData.data;
+        const scale = 4 / (this.canvas.width * renderZoom);
+        const halfWidth = width / 2;
+        const halfHeight = height / 2;
+        const startX = renderCenterX - halfWidth * scale;
+        const startY = renderCenterY + halfHeight * scale;
+
+        console.log(`[CPU Render] Building coordinate arrays...`);
+        const yCoords = this.buildCoordinateArray(startY, -scale, height);
+        const xCoords = this.buildCoordinateArray(startX, scale, width);
+        const rowOrder = this.buildCenterOutOrder(height);
+        const colOrder = this.buildCenterOutOrder(width);
+        console.log(`[CPU Render] Coordinate arrays built. Starting pixel loop...`);
+
+        let lastYieldTime = performance.now();
+        const yieldInterval = 16; // Yield every 16ms (60fps)
+        const showProgress = !this.hasCpuFrame; // Only show progress if we don't have an old frame to show
+
+        for (let rIdx = 0; rIdx < rowOrder.length; rIdx++) {
+            if (token !== this.cpuRenderToken) return false;
+            const y = rowOrder[rIdx];
+            const cy = yCoords[y];
+            for (let cIdx = 0; cIdx < colOrder.length; cIdx++) {
+                if (token !== this.cpuRenderToken) return false;
+                const x = colOrder[cIdx];
+                const cx = xCoords[x];
+                let zx = 0;
+                let zy = 0;
+                let escaped = false;
+                let iter = 0;
+                for (; iter < this.maxIterations; iter++) {
+                    if (this.fractalType === 'burningship') {
+                        zx = Math.abs(zx);
+                        zy = Math.abs(zy);
+                    }
+                    const x2 = zx * zx;
+                    const y2 = zy * zy;
+                    if (x2 + y2 > 4.0) {
+                        escaped = true;
+                        break;
+                    }
+                    const xTemp = x2 - y2 + cx;
+                    zy = 2.0 * zx * zy + cy;
+                    zx = xTemp;
+                }
+                let r = 0, g = 0, b = 0;
+                if (escaped) {
+                    const t = iter / this.maxIterations;
+                    const color = this.getPaletteColor(t);
+                    r = color.r; g = color.g; b = color.b;
+                }
+                const offset = (y * width + x) * 4;
+                data[offset] = r;
+                data[offset + 1] = g;
+                data[offset + 2] = b;
+                data[offset + 3] = 255;
+            }
+            
+            // Time-based yielding
+            if (performance.now() - lastYieldTime > yieldInterval) {
+                const totalPixels = width * height;
+                const pixelsDone = (rIdx + 1) * width;
+                this.updateProgressBar((pixelsDone / totalPixels) * 100, pixelsDone, totalPixels);
+                
+                // Show blooming progress on the dedicated progress canvas
+                this.updateProgressFrame(imageData, renderCenterX, renderCenterY, renderZoom);
+                
+                await new Promise(resolve => requestAnimationFrame(resolve));
+                lastYieldTime = performance.now();
+            }
+        }
+        const totalPixels = width * height;
+        this.updateProgressBar(100, totalPixels, totalPixels);
+        return true;
+    }
+
+    async populateCpuBufferHighPrecisionAsync(token, imageData, width, height, renderCenterX, renderCenterY, renderZoom) {
+        if (typeof DoubleDouble === 'undefined') return this.populateCpuBufferStandardAsync(token, imageData, width, height, renderCenterX, renderCenterY, renderZoom);
+        console.log(`[CPU Render] High precision (DoubleDouble) mode active.`);
+        const data = imageData.data;
+        const scale = 4 / (this.canvas.width * renderZoom);
+        const scaleDD = DoubleDouble.fromNumber(scale);
+        const negScaleDD = scaleDD.neg();
+        const halfWidth = DoubleDouble.fromNumber(width / 2);
+        const halfHeight = DoubleDouble.fromNumber(height / 2);
+        const centerXDD = DoubleDouble.fromNumber(renderCenterX);
+        const centerYDD = DoubleDouble.fromNumber(renderCenterY);
+        const startX = centerXDD.sub(halfWidth.mul(scaleDD));
+        const startY = centerYDD.add(halfHeight.mul(scaleDD));
+        
+        console.log(`[CPU Render] Building high-precision coordinate arrays...`);
+        const yCoords = await this.buildDoubleDoubleCoordinateArrayAsync(startY, negScaleDD, height, token, 'Y-axis');
+        if (token !== this.cpuRenderToken) return false;
+        const xCoords = await this.buildDoubleDoubleCoordinateArrayAsync(startX, scaleDD, width, token, 'X-axis');
+        if (token !== this.cpuRenderToken) return false;
+
+        const rowOrder = this.buildCenterOutOrder(height);
+        const colOrder = this.buildCenterOutOrder(width);
+        console.log(`[CPU Render] Coordinate arrays built. Starting pixel loop...`);
+        const escapeThreshold = 4.0; // Use number for comparison
+
+        const zx = DoubleDouble.zero();
+        const zy = DoubleDouble.zero();
+        const zx2 = DoubleDouble.zero();
+        const zy2 = DoubleDouble.zero();
+        const tmp = DoubleDouble.zero();
+        const twoZxZy = DoubleDouble.zero();
+
+        let lastYieldTime = performance.now();
+        const yieldInterval = 16; // Yield every 16ms (60fps)
+        const isInitialCpuRender = !this.hasCpuFrame;
+
+        for (let rIdx = 0; rIdx < rowOrder.length; rIdx++) {
+            if (token !== this.cpuRenderToken) return false;
+            const y = rowOrder[rIdx];
+            const cy = yCoords[y];
+            for (let cIdx = 0; cIdx < colOrder.length; cIdx++) {
+                if (token !== this.cpuRenderToken) return false;
+                const x = colOrder[cIdx];
+                const cx = xCoords[x];
+                
+                zx.hi = 0; zx.lo = 0;
+                zy.hi = 0; zy.lo = 0;
+                
+                let escaped = false;
+                let iter = 0;
+                for (; iter < this.maxIterations; iter++) {
+                    if (this.fractalType === 'burningship') {
+                        if (zx.hi < 0 || (zx.hi === 0 && zx.lo < 0)) { zx.hi = -zx.hi; zx.lo = -zx.lo; }
+                        if (zy.hi < 0 || (zy.hi === 0 && zy.lo < 0)) { zy.hi = -zy.hi; zy.lo = -zy.lo; }
+                    }
+                    
+                    DoubleDouble.square(zx.hi, zx.lo, zx2);
+                    DoubleDouble.square(zy.hi, zy.lo, zy2);
+                    
+                    if (zx2.hi + zy2.hi > escapeThreshold) {
+                        escaped = true;
+                        break;
+                    }
+                    
+                    // twoZxZy = 2 * zx * zy
+                    DoubleDouble.mul(zx.hi, zx.lo, zy.hi, zy.lo, twoZxZy);
+                    twoZxZy.hi *= 2; twoZxZy.lo *= 2;
+                    
+                    // zx = zx2 - zy2 + cx
+                    DoubleDouble.sub(zx2.hi, zx2.lo, zy2.hi, zy2.lo, tmp);
+                    DoubleDouble.add(tmp.hi, tmp.lo, cx.hi, cx.lo, zx);
+                    
+                    // zy = twoZxZy + cy
+                    DoubleDouble.add(twoZxZy.hi, twoZxZy.lo, cy.hi, cy.lo, zy);
+                    
+                    // Inner loop yield check for very slow iterations
+                    if (iter > 0 && iter % 1000 === 0) {
+                        if (performance.now() - lastYieldTime > yieldInterval) {
+                            await new Promise(resolve => requestAnimationFrame(resolve));
+                            lastYieldTime = performance.now();
+                            if (token !== this.cpuRenderToken) return false;
+                        }
+                    }
+                }
+                let r = 0, g = 0, b = 0;
+                if (escaped) {
+                    const t = iter / this.maxIterations;
+                    const color = this.getPaletteColor(t);
+                    r = color.r; g = color.g; b = color.b;
+                }
+                const offset = (y * width + x) * 4;
+                data[offset] = r;
+                data[offset + 1] = g;
+                data[offset + 2] = b;
+                data[offset + 3] = 255;
+
+                // Time-based yielding between pixels
+                if (performance.now() - lastYieldTime > yieldInterval) {
+                    const totalPixels = width * height;
+                    const pixelsDone = rIdx * width + cIdx;
+                    this.updateProgressBar((pixelsDone / totalPixels) * 100, pixelsDone, totalPixels);
+                    
+                    // Show blooming progress on the dedicated progress canvas
+                    this.updateProgressFrame(imageData, renderCenterX, renderCenterY, renderZoom);
+                    
+                    await new Promise(resolve => requestAnimationFrame(resolve));
+                    lastYieldTime = performance.now();
+                }
+            }
+        }
+        const totalPixels = width * height;
+        this.updateProgressBar(100, totalPixels, totalPixels);
+        return true;
+    }
+
+    updateCpuFrameTransform() {
         const width = this.canvas.width;
         const height = this.canvas.height;
-        const scaleRatio = this.zoom / this.cpuFrameZoom;
-        const currentScale = 4 / (width * this.zoom);
-        const tx = (1 - scaleRatio) * (width / 2) + (this.cpuFrameCenterX - this.centerX) / currentScale;
-        const ty = (1 - scaleRatio) * (height / 2) + (this.centerY - this.cpuFrameCenterY) / currentScale;
-        this.cpuCanvas.style.transformOrigin = '0 0';
-        this.cpuCanvas.style.transform = `matrix(${scaleRatio}, 0, 0, ${scaleRatio}, ${tx}, ${ty})`;
+
+        // Transform the stable CPU frame
+        if (this.cpuCanvas && this.hasCpuFrame) {
+            const scaleRatio = this.zoom / this.cpuFrameZoom;
+            const currentScale = 4 / (width * this.zoom);
+            const tx = (1 - scaleRatio) * (width / 2) + (this.cpuFrameCenterX - this.centerX) / currentScale;
+            const ty = (1 - scaleRatio) * (height / 2) + (this.centerY - this.cpuFrameCenterY) / currentScale;
+            this.cpuCanvas.style.transformOrigin = '0 0';
+            this.cpuCanvas.style.transform = `matrix(${scaleRatio}, 0, 0, ${scaleRatio}, ${tx}, ${ty})`;
+        } else if (this.cpuCanvas) {
+            this.cpuCanvas.style.transform = '';
+        }
+
+        // Transform the progress CPU frame
+        if (this.cpuCanvasProgress && this.isCpuRendering && this.progressFrameZoom) {
+            const scaleRatio = this.zoom / this.progressFrameZoom;
+            const currentScale = 4 / (width * this.zoom);
+            const tx = (1 - scaleRatio) * (width / 2) + (this.progressFrameCenterX - this.centerX) / currentScale;
+            const ty = (1 - scaleRatio) * (height / 2) + (this.centerY - this.progressFrameCenterY) / currentScale;
+            this.cpuCanvasProgress.style.transformOrigin = '0 0';
+            this.cpuCanvasProgress.style.transform = `matrix(${scaleRatio}, 0, 0, ${scaleRatio}, ${tx}, ${ty})`;
+        } else if (this.cpuCanvasProgress) {
+            this.cpuCanvasProgress.style.transform = '';
+        }
     }
 
     getColorSchemeIndex() {
@@ -746,6 +1097,28 @@ class MandelbrotViewer {
             this.cpuIndicatorEl.classList.toggle('visible', showCpu);
             this.cpuIndicatorEl.setAttribute('aria-hidden', (!showCpu).toString());
         }
+        if (this.progressContainerEl) {
+            this.progressContainerEl.classList.toggle('visible', this.isCpuRendering);
+            if (!this.isCpuRendering) {
+                this.updateProgressBar(0, 0, 0);
+            }
+        }
+    }
+
+    updateProgressBar(percent, done, total) {
+        if (this.progressBarEl) {
+            this.progressBarEl.style.width = `${percent}%`;
+        }
+        if (this.progressTextEl) {
+            if (total > 0) {
+                this.progressTextEl.textContent = `${percent.toFixed(1)}% (${done.toLocaleString()}/${total.toLocaleString()} pixels)`;
+            } else {
+                // Keep the current text or show "Preparing..." if total is 0
+                if (!this.progressTextEl.textContent || this.progressTextEl.textContent.includes('pixels')) {
+                    this.progressTextEl.textContent = 'Preparing render...';
+                }
+            }
+        }
     }
 
     updateRenderModeBadge() {
@@ -756,9 +1129,27 @@ class MandelbrotViewer {
         badge.textContent = this.isCpuMode ? 'CPU Renderer' : 'WebGL Renderer';
     }
 
+    updatePrecisionBadge() {
+        const badge = document.getElementById('precisionBadge');
+        if (!badge) return;
+        const active = this.isHighPrecisionCpuActive;
+        badge.classList.toggle('visible', active);
+        badge.setAttribute('aria-hidden', (!active).toString());
+        if (active) {
+            badge.dataset.state = 'active';
+        } else {
+            delete badge.dataset.state;
+        }
+    }
+
     setCpuCanvasVisibility(visible) {
-        if (!this.cpuCanvas) return;
-        this.cpuCanvas.style.display = visible ? 'block' : 'none';
+        if (this.cpuCanvas) {
+            this.cpuCanvas.classList.toggle('visible', visible);
+        }
+        if (this.cpuCanvasProgress) {
+            // We usually only show progress if we are rendering
+            this.cpuCanvasProgress.classList.toggle('visible', visible && this.isCpuRendering);
+        }
     }
 
     getEinkColorPalette(t) {

@@ -60,35 +60,52 @@
         }
 
         * {
-            color: var(--text-color);
-            overflow: hidden;
-            transition: background 0.3s, color 0.3s;
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
         }
 
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             background: var(--bg-color);
+            color: var(--text-color);
             transition: background 0.3s, color 0.3s;
+            width: 100vw;
+            height: 100vh;
+            overflow: hidden;
         }
 
         #canvas,
-        #cpuCanvas {
-            position: fixed;
+        #cpuCanvas,
+        #cpuCanvasProgress {
+            position: absolute;
             top: 0;
             left: 0;
-            width: 100vw;
-            height: 100vh;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
             display: block;
-            background: var(--bg-color);
+            image-rendering: pixelated;
+            opacity: 0;
         }
 
         #canvas {
+            pointer-events: auto;
             cursor: crosshair;
+            opacity: 1;
+            z-index: 1;
         }
 
         #cpuCanvas {
-            pointer-events: none;
-            display: none;
+            z-index: 2;
+        }
+
+        #cpuCanvasProgress {
+            z-index: 3;
+        }
+
+        #cpuCanvas.visible, #cpuCanvasProgress.visible {
+            opacity: 1;
         }
 
         .overlay-panel {
@@ -104,6 +121,7 @@
             border: 1px solid var(--border-color);
             color: var(--text-color);
             backdrop-filter: blur(10px);
+            z-index: 1000;
         }
 
         .overlay-panel .panel-title {
@@ -177,6 +195,7 @@
             max-height: 80vh;
             overflow-y: auto;
             color: var(--text-color);
+            z-index: 1000;
         }
 
         .info-panel h2 {
@@ -288,6 +307,8 @@
             align-items: center;
             justify-content: center;
             overflow: hidden;
+            top: 20px;
+            left: 20px;
         }
 
         .overlay-panel.hud-collapsed .overlay-body,
@@ -352,6 +373,7 @@
             font-family: 'Courier New', monospace;
             backdrop-filter: blur(10px);
             color: var(--text-color);
+            z-index: 1000;
         }
 
         .loading {
@@ -378,15 +400,26 @@
             left: 50%;
             transform: translateX(-50%);
             background: var(--panel-bg);
-            padding: 10px 20px;
-            border-radius: 5px;
+            padding: 12px 20px;
+            border-radius: 12px;
             border: 1px solid var(--border-color);
-            font-size: 14px;
             backdrop-filter: blur(10px);
             color: var(--text-color);
             display: flex;
+            flex-direction: column;
             align-items: center;
+            gap: 10px;
+            min-width: 240px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+            z-index: 1000;
+        }
+
+        .hud-row {
+            display: flex;
+            align-items: center;
+            justify-content: center;
             gap: 12px;
+            width: 100%;
         }
 
         .cpu-indicator {
@@ -418,20 +451,53 @@
             display: inline-flex;
         }
 
+        .progress-container {
+            width: 100%;
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            gap: 5px;
+            margin-top: 5px;
+        }
+
+        .progress-container.visible {
+            display: flex;
+        }
+
+        .progress-track {
+            width: 100%;
+            height: 4px;
+            background: rgba(0, 0, 0, 0.1);
+            border-radius: 2px;
+            overflow: hidden;
+        }
+
+        .progress-bar {
+            width: 0%;
+            height: 100%;
+            background: #4CAF50;
+            transition: width 0.1s ease-out;
+        }
+
+        .progress-text {
+            font-size: 10px;
+            color: var(--label-color);
+            font-family: 'Courier New', monospace;
+            white-space: nowrap;
+        }
+
+        [data-theme="dark"] .progress-track {
+            background: rgba(255, 255, 255, 0.1);
+        }
+
         .render-mode-badge {
-            position: absolute;
-            top: 70px;
-            left: 50%;
-            transform: translateX(-50%);
-            padding: 6px 16px;
+            padding: 4px 12px;
             border-radius: 999px;
-            font-size: 12px;
+            font-size: 11px;
             font-weight: 600;
             letter-spacing: 0.05em;
             border: 1px solid var(--border-color);
-            backdrop-filter: blur(10px);
-            color: var(--text-color);
-            background: var(--panel-bg);
+            background: rgba(255, 255, 255, 0.05);
         }
 
         .render-mode-badge[data-mode="cpu"] {
@@ -442,6 +508,31 @@
         .render-mode-badge[data-mode="webgl"] {
             border-color: #4CAF50;
             color: #4CAF50;
+        }
+
+        .precision-badge {
+            padding: 4px 14px;
+            border-radius: 999px;
+            font-size: 10px;
+            letter-spacing: 0.08em;
+            border: 1px dashed #9C27B0;
+            color: #9C27B0;
+            background: rgba(156, 39, 176, 0.08);
+            display: none;
+        }
+
+        .precision-badge.visible {
+            display: inline-flex;
+            gap: 6px;
+            align-items: center;
+        }
+
+        .precision-dot {
+            width: 5px;
+            height: 5px;
+            border-radius: 50%;
+            background: currentColor;
+            box-shadow: 0 0 5px currentColor;
         }
 
         select {
@@ -495,6 +586,7 @@
     <body data-theme="light">
     <canvas id="canvas"></canvas>
     <canvas id="cpuCanvas" aria-hidden="true"></canvas>
+    <canvas id="cpuCanvasProgress" aria-hidden="true"></canvas>
     
     <div class="overlay-panel" id="commandPanel">
         <div class="panel-title">
@@ -617,13 +709,28 @@
     </div>
     
     <div class="zoom-indicator" id="zoomIndicator">
-        <span id="zoomValue">Zoom: 1.0x</span>
-        <span class="cpu-indicator" id="cpuIndicator" aria-live="polite" aria-hidden="true">CPU</span>
+        <div class="hud-row">
+            <span id="zoomValue">Zoom: 1.0x</span>
+            <span class="cpu-indicator" id="cpuIndicator" aria-live="polite" aria-hidden="true">CPU</span>
+        </div>
+        <div class="hud-row">
+            <div class="render-mode-badge" id="renderMode" data-mode="webgl">WebGL Renderer</div>
+            <div class="precision-badge" id="precisionBadge" aria-hidden="true">
+                <span class="precision-dot"></span>
+                DOUBLE-DOUBLE
+            </div>
+        </div>
+        <div class="progress-container" id="progressContainer">
+            <div class="progress-track">
+                <div class="progress-bar" id="progressBar"></div>
+            </div>
+            <div class="progress-text" id="progressText">Starting render...</div>
+        </div>
     </div>
-    <div class="render-mode-badge" id="renderMode" data-mode="webgl">WebGL Renderer</div>
 
     <div class="loading" id="loading">Rendering...</div>
 
+    <script src="DoubleDouble.js"></script>
     <script src="mandelbrot.js"></script>
 </body>
 </html>
