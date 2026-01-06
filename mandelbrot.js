@@ -1088,7 +1088,7 @@ class MandelbrotViewer {
     }
 
     updateCoordinates(x, y) {
-        document.getElementById('coordinates').textContent = `X: ${x.toFixed(6)} | Y: ${y.toFixed(6)} | Zoom: ${this.zoom.toFixed(1)}x`;
+        document.getElementById('coordinates').textContent = `X: ${x.toFixed(6)} | Y: ${y.toFixed(6)}`;
     }
 
     updateCenterCoordinates() {
