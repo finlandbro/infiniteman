@@ -253,7 +253,7 @@ class MandelbrotViewer {
                         if (i >= u_maxIterations) break;
                         if (u_fractalType == 1) z = vec2(abs(z.x), abs(z.y));
                         float x = z.x * z.x - z.y * z.y + c.x;
-                        float y = 2.0 * z.x * z.y + c.y;
+                        float y = u_fractalType == 1 ? -2.0 * z.x * z.y + c.y : 2.0 * z.x * z.y + c.y;
                         z = vec2(x, y);
                         if (dot(z, z) > 4.0) {
                             escaped = true;
@@ -473,6 +473,11 @@ class MandelbrotViewer {
         
         document.getElementById('colorScheme').addEventListener('change', (e) => {
             this.colorScheme = e.target.value;
+            this.render();
+        });
+
+        document.getElementById('fractalType').addEventListener('change', (e) => {
+            this.fractalType = e.target.value;
             this.render();
         });
         
@@ -886,13 +891,10 @@ class MandelbrotViewer {
                     }
                     const x2 = zx * zx;
                     const y2 = zy * zy;
-                    if (x2 + y2 > 4.0) {
-                        escaped = true;
-                        break;
-                    }
-                    const xTemp = x2 - y2 + cx;
-                    zy = 2.0 * zx * zy + cy;
-                    zx = xTemp;
+                    const new_zx = x2 - y2 + cx;
+                    const new_zy = this.fractalType === 'burningship' ? -2.0 * zx * zy + cy : 2.0 * zx * zy + cy;
+                    zx = new_zx;
+                    zy = new_zy;
                 }
                 let r = 0, g = 0, b = 0;
                 if (escaped) {
@@ -991,6 +993,11 @@ class MandelbrotViewer {
                     
                     // twoZxZy = 2 * zx * zy
                     DoubleDouble.mul(zx.hi, zx.lo, zy.hi, zy.lo, twoZxZy);
+                    if (this.fractalType === 'burningship') {
+                        // Invert the imaginary part for upright ship: -2*zx*zy + cy
+                        twoZxZy.hi = -twoZxZy.hi;
+                        twoZxZy.lo = -twoZxZy.lo;
+                    }
                     twoZxZy.hi *= 2; twoZxZy.lo *= 2;
                     
                     // zx = zx2 - zy2 + cx
@@ -1282,6 +1289,9 @@ class MandelbrotViewer {
     goToTourLocation(index) {
         const location = this.tourLocations[index];
         this.fractalType = location.type || 'mandelbrot';
+        const typeSelect = document.getElementById('fractalType');
+        if (typeSelect) typeSelect.value = this.fractalType;
+        
         this.centerX = location.x;
         this.centerY = location.y;
         this.zoom = location.zoom;
