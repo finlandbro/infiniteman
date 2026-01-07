@@ -403,7 +403,7 @@ class MandelbrotViewer {
             const dx = p.x - this.dragStartX;
             const dy = p.y - this.dragStartY;
             this.centerX -= dx * scale;
-            this.centerY -= dy * scale;
+            this.centerY += dy * scale;
             
             if (this.debugEnabled) {
                 console.log(`[Drag] dx=${dx.toFixed(2)} dy=${dy.toFixed(2)} scale=${scale.toExponential(4)}`);
@@ -499,7 +499,7 @@ class MandelbrotViewer {
             const dx = p.x - this.dragStartX;
             const dy = p.y - this.dragStartY;
             this.centerX -= dx * scale;
-            this.centerY -= dy * scale;
+            this.centerY += dy * scale;
 
             if (this.debugEnabled) {
                 console.log(`[TouchDrag] dx=${dx.toFixed(2)} dy=${dy.toFixed(2)} scale=${scale.toExponential(4)}`);
