@@ -93,14 +93,6 @@ class MandelbrotViewer {
                 description: "A smaller copy of the entire Mandelbrot set"
             },
             {
-                name: "The Burning Ship",
-                type: "burningship",
-                x: -1.75,
-                y: -0.03,
-                zoom: 1,
-                description: "The Burning Ship fractal, rendered using absolute value dynamics."
-            },
-            {
                 name: "Spiral Galaxy",
                 type: "mandelbrot",
                 x: -0.7269,
@@ -127,18 +119,18 @@ class MandelbrotViewer {
             {
                 name: "Elephant Valley",
                 type: "mandelbrot",
-                x: 0.274,
-                y: 0.482,
-                zoom: 2000,
-                description: "Structures resembling elephant trunks"
+                x: 0.3,
+                y: 0,
+                zoom: 40,
+                description: "The cusp region near 0.3 + 0i whose filaments resemble elephant trunks"
             },
             {
                 name: "Scepter Valley",
                 type: "mandelbrot",
-                x: -1.368,
-                y: 0,
-                zoom: 5000,
-                description: "High-symmetry valley between the main cardioid and the bulb"
+                x: -1.250088,
+                y: 0.029386,
+                zoom: 1100,
+                description: "Cusp between the period-2 bulb and its satellite \u2013 classic Scepter Valley"
             },
             {
                 name: "Lightning Bolts",
@@ -157,12 +149,44 @@ class MandelbrotViewer {
                 description: "Extreme zoom showing infinite detail"
             },
             {
-                name: "Turtle Cove",
+                name: "Airplane (Period-3 Bulb)",
                 type: "mandelbrot",
-                x: -0.10155,
-                y: 0.95632,
-                zoom: 750000,
-                description: "Mini-Mandelbrot region whose outline forms a turtle shell"
+                x: -1.7548776662466927,
+                y: 0,
+                zoom: 350,
+                description: "Real-axis satellite whose lobes resemble an airplane; center of the period-3 component"
+            },
+            {
+                name: "Cauliflower Dendrite",
+                type: "mandelbrot",
+                x: -1.401155189092,
+                y: 0,
+                zoom: 500,
+                description: "Feigenbaum point on the real axis where the dendritic 'cauliflower' filaments emerge"
+            },
+            {
+                name: "Golden Mean Siegel Disk",
+                type: "mandelbrot",
+                x: -0.3905409,
+                y: 0.5867879,
+                zoom: 1800,
+                description: "Boundary of the golden-mean Siegel disk, famous for its quasi-rotational spirals"
+            },
+            {
+                name: "Spiral Seahorse Junction",
+                type: "mandelbrot",
+                x: -0.743643887037151,
+                y: 0.13182590420533,
+                zoom: 15000,
+                description: "Deep-zoom triple junction where seahorse tails and spirals intertwine"
+            },
+            {
+                name: "Elephant-Seahorse Collision",
+                type: "mandelbrot",
+                x: -0.1011,
+                y: 0.9563,
+                zoom: 6000,
+                description: "Misiurewicz point where elephant trunks crash into seahorse tails, producing double spirals"
             }
         ];
         this.tourDefaultInfoMessage = 'Click "Start Guided Tour" to explore fascinating locations';
@@ -597,6 +621,30 @@ class MandelbrotViewer {
         }
     }
 
+    computeTourIntermediateZoom(startState, targetState) {
+        if (!startState || !targetState) return this.zoom;
+        const minZoom = Math.min(startState.zoom, targetState.zoom);
+        const maxZoom = Math.max(startState.zoom, targetState.zoom);
+        if (!isFinite(minZoom) || minZoom <= 0) return startState.zoom;
+
+        let intermediate = minZoom * 0.35;
+        intermediate = Math.min(intermediate, startState.zoom * 0.85);
+        intermediate = Math.min(intermediate, targetState.zoom * 0.85);
+
+        const minClamp = 0.01;
+        intermediate = Math.max(intermediate, minClamp);
+
+        if (intermediate >= startState.zoom) intermediate = startState.zoom * 0.85;
+        if (intermediate >= targetState.zoom) intermediate = targetState.zoom * 0.85;
+
+        if (maxZoom / minZoom <= 1.2) {
+            intermediate = minZoom * 0.7;
+        }
+
+        intermediate = Math.max(Math.min(intermediate, minZoom), minClamp);
+        return intermediate;
+    }
+
     easeInOutQuad(t) {
         return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
     }
@@ -635,11 +683,14 @@ class MandelbrotViewer {
             const nextCenterX = start.centerX + (target.centerX - start.centerX) * eased;
             const nextCenterY = start.centerY + (target.centerY - start.centerY) * eased;
 
-            this.moveToViewState({ centerX: nextCenterX, centerY: nextCenterY, zoom: nextZoom });
+            this.moveToViewState({ centerX: nextCenterX, centerY: nextCenterY, zoom: nextZoom }, { render: false });
+            this.render();
 
             if (progress < 1) {
                 this.tourAnimationFrame = requestAnimationFrame(step);
             } else {
+                this.moveToViewState(target, { render: false });
+                this.render();
                 this.tourAnimationFrame = null;
                 this.tourAnimationStartTime = null;
                 this.tourAnimationStartState = null;
@@ -654,6 +705,76 @@ class MandelbrotViewer {
         };
 
         this.tourAnimationFrame = requestAnimationFrame(step);
+    }
+
+    animateTourTransition(targetState, options = {}) {
+        const { duration = this.tourAnimationDuration, onComplete } = options;
+        if (!targetState) return;
+        const startState = this.getCurrentViewState();
+        const epsilonZoom = 1e-9;
+        const epsilonCenter = 1e-12;
+
+        const intermediateZoom = this.computeTourIntermediateZoom(startState, targetState);
+        const hasZoomOut = intermediateZoom < startState.zoom - epsilonZoom;
+        const hasZoomIn = Math.abs(targetState.zoom - intermediateZoom) > epsilonZoom;
+        const hasPan = Math.hypot(targetState.centerX - startState.centerX, targetState.centerY - startState.centerY) > epsilonCenter;
+
+        const phases = [];
+        if (hasZoomOut) {
+            phases.push({
+                name: 'zoom-out',
+                state: { centerX: startState.centerX, centerY: startState.centerY, zoom: intermediateZoom },
+                weight: 0.35
+            });
+        }
+        if (hasPan) {
+            phases.push({
+                name: 'pan',
+                state: {
+                    centerX: targetState.centerX,
+                    centerY: targetState.centerY,
+                    zoom: (hasZoomOut || hasZoomIn) ? intermediateZoom : startState.zoom
+                },
+                weight: 0.3
+            });
+        }
+        if (hasZoomIn) {
+            phases.push({
+                name: 'zoom-in',
+                state: targetState,
+                weight: 0.35
+            });
+        }
+
+        if (!phases.length) {
+            this.moveToViewState(targetState, { render: true });
+            if (typeof onComplete === 'function') onComplete();
+            return;
+        }
+
+        const totalWeight = phases.reduce((sum, phase) => sum + phase.weight, 0);
+        phases.forEach(phase => {
+            phase.duration = Math.max(120, duration * (phase.weight / totalWeight));
+        });
+
+        const runPhase = (index) => {
+            if (index >= phases.length) {
+                if (typeof onComplete === 'function') {
+                    onComplete();
+                } else {
+                    this.render();
+                }
+                return;
+            }
+            const { state, duration: phaseDuration } = phases[index];
+            this.animateToViewState(state, {
+                duration: phaseDuration,
+                onComplete: () => runPhase(index + 1)
+            });
+        };
+
+        this.cancelTourAnimation();
+        runPhase(0);
     }
 
     computeZoomAnchorDrift(screenX, screenY, factor) {
@@ -1189,7 +1310,7 @@ class MandelbrotViewer {
         if (prevBtn) prevBtn.disabled = index === 0;
         if (nextBtn) nextBtn.disabled = index === this.tourLocations.length - 1;
 
-        this.animateToViewState({
+        this.animateTourTransition({
             centerX: location.x,
             centerY: location.y,
             zoom: location.zoom
