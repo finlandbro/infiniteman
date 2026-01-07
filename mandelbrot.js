@@ -149,22 +149,6 @@ class MandelbrotViewer {
                 description: "Extreme zoom showing infinite detail"
             },
             {
-                name: "Airplane (Period-3 Bulb)",
-                type: "mandelbrot",
-                x: -1.7548776662466927,
-                y: 0,
-                zoom: 350,
-                description: "Real-axis satellite whose lobes resemble an airplane; center of the period-3 component"
-            },
-            {
-                name: "Cauliflower Dendrite",
-                type: "mandelbrot",
-                x: -1.401155189092,
-                y: 0,
-                zoom: 500,
-                description: "Feigenbaum point on the real axis where the dendritic 'cauliflower' filaments emerge"
-            },
-            {
                 name: "Golden Mean Siegel Disk",
                 type: "mandelbrot",
                 x: -0.3905409,
@@ -180,14 +164,6 @@ class MandelbrotViewer {
                 zoom: 15000,
                 description: "Deep-zoom triple junction where seahorse tails and spirals intertwine"
             },
-            {
-                name: "Elephant-Seahorse Collision",
-                type: "mandelbrot",
-                x: -0.1011,
-                y: 0.9563,
-                zoom: 6000,
-                description: "Misiurewicz point where elephant trunks crash into seahorse tails, producing double spirals"
-            }
         ];
         this.tourDefaultInfoMessage = 'Click "Start Guided Tour" to explore fascinating locations';
         
