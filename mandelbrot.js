@@ -62,6 +62,11 @@ class MandelbrotViewer {
         // Tour state
         this.isTouring = false;
         this.tourIndex = 0;
+        this.tourAnimationFrame = null;
+        this.tourAnimationStartTime = null;
+        this.tourAnimationTarget = null;
+        this.tourAnimationStartState = null;
+        this.tourAnimationDuration = 1500;
         this.tourLocations = [
             {
                 name: "Main Cardioid",
@@ -160,6 +165,7 @@ class MandelbrotViewer {
                 description: "Mini-Mandelbrot region whose outline forms a turtle shell"
             }
         ];
+        this.tourDefaultInfoMessage = 'Click "Start Guided Tour" to explore fascinating locations';
         
         this.colorScheme = 'classic';
         
@@ -369,6 +375,7 @@ class MandelbrotViewer {
     }
 
     handleMouseDown(e) {
+        this.cancelTourAnimation();
         if (e.button === 0) {
             this.isDragging = true;
             this.dragged = false;
@@ -398,20 +405,18 @@ class MandelbrotViewer {
         const coords = this.screenToComplex(p.x, p.y);
         this.updateCoordinates(coords.x, coords.y);
         if (this.isDragging) {
-            const scale = 4 / (this.canvas.width * this.zoom);
             if (p.x !== this.dragStartX || p.y !== this.dragStartY) this.dragged = true;
             const dx = p.x - this.dragStartX;
             const dy = p.y - this.dragStartY;
-            this.centerX -= dx * scale;
-            this.centerY += dy * scale;
             
             if (this.debugEnabled) {
+                const scale = 4 / (this.canvas.width * this.zoom);
                 console.log(`[Drag] dx=${dx.toFixed(2)} dy=${dy.toFixed(2)} scale=${scale.toExponential(4)}`);
             }
             
+            this.panBy(dx, dy);
             this.dragStartX = p.x;
             this.dragStartY = p.y;
-            this.render();
         }
     }
 
@@ -438,6 +443,7 @@ class MandelbrotViewer {
 
     handleWheel(e) {
         e.preventDefault();
+        this.cancelTourAnimation();
         this.isInteracting = true;
         this.cancelCpuRender();
         const p = this.clientToCanvasPoint(e.clientX, e.clientY);
@@ -463,6 +469,7 @@ class MandelbrotViewer {
     }
 
     handleTouchStart(e) {
+        this.cancelTourAnimation();
         this.cancelCpuRender();
         this.isInteracting = true;
         if (e.touches.length === 1 && !this.isPinching) {
@@ -494,20 +501,18 @@ class MandelbrotViewer {
             this.zoomAt(a.x, a.y, targetZoom / this.zoom);
             this.updateCenterCoordinates();
         } else if (e.touches.length === 1 && this.isDragging) {
-            const scale = 4 / (this.canvas.width * this.zoom);
             const p = this.clientToCanvasPoint(e.touches[0].clientX, e.touches[0].clientY);
             const dx = p.x - this.dragStartX;
             const dy = p.y - this.dragStartY;
-            this.centerX -= dx * scale;
-            this.centerY += dy * scale;
 
             if (this.debugEnabled) {
+                const scale = 4 / (this.canvas.width * this.zoom);
                 console.log(`[TouchDrag] dx=${dx.toFixed(2)} dy=${dy.toFixed(2)} scale=${scale.toExponential(4)}`);
             }
 
+            this.panBy(dx, dy);
             this.dragStartX = p.x;
             this.dragStartY = p.y;
-            this.render();
             this.updateCenterCoordinates();
         }
     }
@@ -536,13 +541,119 @@ class MandelbrotViewer {
         return { x: (touches[0].clientX + touches[1].clientX) / 2, y: (touches[0].clientY + touches[1].clientY) / 2 };
     }
 
-    zoomAt(screenX, screenY, factor) {
+    getCurrentViewState() {
+        return {
+            centerX: this.centerX,
+            centerY: this.centerY,
+            zoom: this.zoom
+        };
+    }
+
+    panBy(screenDx, screenDy, options = {}) {
+        const { render = true } = options;
+        const width = this.canvas.width;
+        if (!width || !this.canvas.height) return;
+        const scale = 4 / (width * this.zoom);
+        this.centerX -= screenDx * scale;
+        this.centerY += screenDy * scale;
+        if (render) {
+            this.render();
+        }
+    }
+
+    zoomAt(screenX, screenY, factor, options = {}) {
+        const { render = true } = options;
+        if (!this.canvas.width || !this.canvas.height) return;
         const coords = this.screenToComplex(screenX, screenY);
         this.zoom *= factor;
         const newCoords = this.screenToComplex(screenX, screenY);
         this.centerX += coords.x - newCoords.x;
         this.centerY += coords.y - newCoords.y;
-        this.render();
+        if (render) {
+            this.render();
+        }
+    }
+
+    moveToViewState({ centerX, centerY, zoom }, options = {}) {
+        const { render = true } = options;
+        const width = this.canvas.width;
+        const height = this.canvas.height;
+        if (!width || !height) return;
+
+        if (zoom && zoom > 0 && Math.abs(zoom - this.zoom) > 1e-12) {
+            const factor = zoom / this.zoom;
+            this.zoomAt(width / 2, height / 2, factor, { render: false });
+        }
+
+        const scale = 4 / (width * this.zoom);
+        const dx = (this.centerX - centerX) / scale;
+        const dy = (centerY - this.centerY) / scale;
+        if (Math.abs(dx) > 1e-12 || Math.abs(dy) > 1e-12) {
+            this.panBy(dx, dy, { render: false });
+        }
+
+        if (render) {
+            this.render();
+        }
+    }
+
+    easeInOutQuad(t) {
+        return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+    }
+
+    cancelTourAnimation() {
+        if (this.tourAnimationFrame) {
+            cancelAnimationFrame(this.tourAnimationFrame);
+            this.tourAnimationFrame = null;
+        }
+        this.tourAnimationStartTime = null;
+        this.tourAnimationStartState = null;
+        this.tourAnimationTarget = null;
+    }
+
+    animateToViewState(targetState, options = {}) {
+        const { duration = this.tourAnimationDuration, onComplete } = options;
+        if (!targetState) return;
+        this.cancelTourAnimation();
+        this.isInteracting = true;
+        this.tourAnimationStartState = this.getCurrentViewState();
+        this.tourAnimationTarget = targetState;
+        this.tourAnimationStartTime = performance.now();
+
+        const step = (now) => {
+            if (!this.tourAnimationStartTime || !this.tourAnimationTarget) {
+                return;
+            }
+            const elapsed = now - this.tourAnimationStartTime;
+            const progress = duration > 0 ? Math.min(1, elapsed / duration) : 1;
+            const eased = this.easeInOutQuad(progress);
+
+            const start = this.tourAnimationStartState;
+            const target = this.tourAnimationTarget;
+            const zoomRatio = target.zoom > 0 && start.zoom > 0 ? (target.zoom / start.zoom) : 1;
+            const nextZoom = start.zoom * Math.pow(zoomRatio, eased);
+            const nextCenterX = start.centerX + (target.centerX - start.centerX) * eased;
+            const nextCenterY = start.centerY + (target.centerY - start.centerY) * eased;
+
+            this.moveToViewState({ centerX: nextCenterX, centerY: nextCenterY, zoom: nextZoom });
+
+            if (progress < 1) {
+                this.tourAnimationFrame = requestAnimationFrame(step);
+            } else {
+                this.tourAnimationFrame = null;
+                this.tourAnimationStartTime = null;
+                this.tourAnimationStartState = null;
+                this.tourAnimationTarget = null;
+                this.isInteracting = false;
+                if (typeof onComplete === 'function') {
+                    onComplete();
+                } else {
+                    this.render();
+                }
+            }
+        };
+
+        this.tourAnimationFrame = requestAnimationFrame(step);
     }
 
     computeZoomAnchorDrift(screenX, screenY, factor) {
@@ -1033,12 +1144,16 @@ class MandelbrotViewer {
     }
 
     stopTour() {
+        this.cancelTourAnimation();
         this.isTouring = false;
         document.getElementById('tourStart').disabled = false;
         document.getElementById('tourStop').disabled = true;
         document.getElementById('tourNext').disabled = true;
         document.getElementById('tourPrev').disabled = true;
-        document.getElementById('tourInfo').textContent = 'Click "Start Guided Tour" to explore fascinating locations';
+        const infoEl = document.getElementById('tourInfo');
+        if (infoEl) {
+            infoEl.textContent = this.tourDefaultInfoMessage;
+        }
     }
 
     nextTourLocation() {
@@ -1057,17 +1172,35 @@ class MandelbrotViewer {
 
     goToTourLocation(index) {
         const location = this.tourLocations[index];
+        if (!location) return;
+        this.tourIndex = index;
+
         this.fractalType = location.type || 'mandelbrot';
         const typeSelect = document.getElementById('fractalType');
         if (typeSelect) typeSelect.value = this.fractalType;
-        
-        this.centerX = location.x;
-        this.centerY = location.y;
-        this.zoom = location.zoom;
-        this.render();
-        document.getElementById('tourInfo').innerHTML = `<strong>${location.name}</strong><br>${location.description}<br>Location ${index + 1} of ${this.tourLocations.length}`;
-        document.getElementById('tourPrev').disabled = index === 0;
-        document.getElementById('tourNext').disabled = index === this.tourLocations.length - 1;
+
+        const infoEl = document.getElementById('tourInfo');
+        if (infoEl) {
+            infoEl.innerHTML = `<strong>${location.name}</strong><br>${location.description}<br><em>Animating to location ${index + 1} of ${this.tourLocations.length}...</em>`;
+        }
+
+        const prevBtn = document.getElementById('tourPrev');
+        const nextBtn = document.getElementById('tourNext');
+        if (prevBtn) prevBtn.disabled = index === 0;
+        if (nextBtn) nextBtn.disabled = index === this.tourLocations.length - 1;
+
+        this.animateToViewState({
+            centerX: location.x,
+            centerY: location.y,
+            zoom: location.zoom
+        }, {
+            onComplete: () => {
+                if (infoEl) {
+                    infoEl.innerHTML = `<strong>${location.name}</strong><br>${location.description}<br>Location ${index + 1} of ${this.tourLocations.length}`;
+                }
+                this.updateCenterCoordinates();
+            }
+        });
     }
 }
 
