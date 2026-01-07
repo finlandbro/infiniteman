@@ -21,6 +21,8 @@ class MandelbrotViewer {
         this.isCpuRendering = false;
         this.hasCpuFrame = false;
         this.dpr = window.devicePixelRatio || 1;
+        this.debugEnabled = false;
+        this._debugSeq = 0;
         
         // View parameters
         this.centerX = -0.5;
@@ -229,11 +231,36 @@ class MandelbrotViewer {
         };
     }
 
-    snapToPixelCenter(p) {
-        return {
-            x: Math.floor(p.x) + 0.5,
-            y: Math.floor(p.y) + 0.5
+    debugLogZoom(label, payload) {
+        if (!this.debugEnabled) return;
+        const seq = ++this._debugSeq;
+        const rect = this.canvas.getBoundingClientRect();
+        const canvasMeta = {
+            canvasWidth: this.canvas.width,
+            canvasHeight: this.canvas.height,
+            rectLeft: rect.left,
+            rectTop: rect.top,
+            rectWidth: rect.width,
+            rectHeight: rect.height,
+            dpr: window.devicePixelRatio || 1,
         };
+        const layer = {
+            isCpuMode: this.isCpuMode,
+            isCpuRendering: this.isCpuRendering,
+            hasCpuFrame: this.hasCpuFrame,
+            webglOpacity: this.canvas?.style?.opacity,
+            cpuOpacity: this.cpuCanvas?.style?.opacity,
+            cpuVisible: this.cpuCanvas?.classList?.contains('visible'),
+            cpuTransform: this.cpuCanvas?.style?.transform,
+            progressVisible: this.cpuCanvasProgress?.classList?.contains('visible'),
+            progressTransform: this.cpuCanvasProgress?.style?.transform,
+        };
+        console.groupCollapsed(`[ZoomDebug #${seq}] ${label}`);
+        console.log('view', { centerX: this.centerX, centerY: this.centerY, zoom: this.zoom, maxIterations: this.maxIterations, fractalType: this.fractalType });
+        console.log('canvas', canvasMeta);
+        console.log('layer', layer);
+        console.log('payload', payload);
+        console.groupEnd();
     }
 
     setupEventListeners() {
@@ -246,6 +273,13 @@ class MandelbrotViewer {
         window.addEventListener('resize', () => this.resizeCanvas(true));
 
         window.addEventListener('keydown', (e) => {
+            if (e.key === 'd' || e.key === 'D') {
+                const tag = (e.target && e.target.tagName) ? e.target.tagName.toLowerCase() : '';
+                if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
+                this.debugEnabled = !this.debugEnabled;
+                console.log(`[Debug] debugEnabled=${this.debugEnabled}`);
+                return;
+            }
             if (e.key !== 't' && e.key !== 'T') return;
             const tag = (e.target && e.target.tagName) ? e.target.tagName.toLowerCase() : '';
             if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
@@ -346,7 +380,15 @@ class MandelbrotViewer {
         } else if (e.button === 2) {
             this.cancelCpuRender();
             const p = this.clientToCanvasPoint(e.clientX, e.clientY);
-            const a = this.snapToPixelCenter(p);
+            const a = p;
+            const complexBefore = this.screenToComplex(a.x, a.y);
+            this.debugLogZoom('right-click zoom (pre)', {
+                client: { x: e.clientX, y: e.clientY },
+                canvasPoint: p,
+                anchor: a,
+                factor: 0.5,
+                complexBefore
+            });
             this.zoomAt(a.x, a.y, 0.5);
         }
     }
@@ -358,8 +400,15 @@ class MandelbrotViewer {
         if (this.isDragging) {
             const scale = 4 / (this.canvas.width * this.zoom);
             if (p.x !== this.dragStartX || p.y !== this.dragStartY) this.dragged = true;
-            this.centerX -= (p.x - this.dragStartX) * scale;
-            this.centerY += (p.y - this.dragStartY) * scale;
+            const dx = p.x - this.dragStartX;
+            const dy = p.y - this.dragStartY;
+            this.centerX -= dx * scale;
+            this.centerY -= dy * scale;
+            
+            if (this.debugEnabled) {
+                console.log(`[Drag] dx=${dx.toFixed(2)} dy=${dy.toFixed(2)} scale=${scale.toExponential(4)}`);
+            }
+            
             this.dragStartX = p.x;
             this.dragStartY = p.y;
             this.render();
@@ -370,7 +419,15 @@ class MandelbrotViewer {
         const shouldClickZoom = e.button === 0 && this.isDragging && !this.dragged;
         if (shouldClickZoom) {
             const p = this.clientToCanvasPoint(e.clientX, e.clientY);
-            const a = this.snapToPixelCenter(p);
+            const a = p;
+            const complexBefore = this.screenToComplex(a.x, a.y);
+            this.debugLogZoom('click zoom (pre)', {
+                client: { x: e.clientX, y: e.clientY },
+                canvasPoint: p,
+                anchor: a,
+                factor: 2,
+                complexBefore
+            });
             this.zoomAt(a.x, a.y, 2);
         }
         this.isDragging = false;
@@ -384,8 +441,17 @@ class MandelbrotViewer {
         this.isInteracting = true;
         this.cancelCpuRender();
         const p = this.clientToCanvasPoint(e.clientX, e.clientY);
-        const a = this.snapToPixelCenter(p);
-        this.zoomAt(a.x, a.y, e.deltaY > 0 ? 0.9 : 1.1);
+        const a = p;
+        const factor = e.deltaY > 0 ? 0.9 : 1.1;
+        const complexBefore = this.screenToComplex(a.x, a.y);
+        this.debugLogZoom('wheel zoom (pre)', {
+            client: { x: e.clientX, y: e.clientY, deltaY: e.deltaY },
+            canvasPoint: p,
+            anchor: a,
+            factor,
+            complexBefore
+        });
+        this.zoomAt(a.x, a.y, factor);
         
         // Clear previous timer and set a new one to detect end of wheeling
         if (this.renderTimer) clearTimeout(this.renderTimer);
@@ -411,7 +477,7 @@ class MandelbrotViewer {
             this.initialZoom = this.zoom;
             const center = this.getTouchCenter(e.touches);
             const p = this.clientToCanvasPoint(center.x, center.y);
-            this.pinchCenter = this.snapToPixelCenter(p);
+            this.pinchCenter = p;
         }
         this.updateCenterCoordinates();
     }
@@ -424,14 +490,21 @@ class MandelbrotViewer {
             const targetZoom = this.initialZoom * (currentDistance / this.initialPinchDistance);
             const center = this.getTouchCenter(e.touches);
             const p = this.clientToCanvasPoint(center.x, center.y);
-            const a = this.snapToPixelCenter(p);
+            const a = p;
             this.zoomAt(a.x, a.y, targetZoom / this.zoom);
             this.updateCenterCoordinates();
         } else if (e.touches.length === 1 && this.isDragging) {
             const scale = 4 / (this.canvas.width * this.zoom);
             const p = this.clientToCanvasPoint(e.touches[0].clientX, e.touches[0].clientY);
-            this.centerX -= (p.x - this.dragStartX) * scale;
-            this.centerY += (p.y - this.dragStartY) * scale;
+            const dx = p.x - this.dragStartX;
+            const dy = p.y - this.dragStartY;
+            this.centerX -= dx * scale;
+            this.centerY -= dy * scale;
+
+            if (this.debugEnabled) {
+                console.log(`[TouchDrag] dx=${dx.toFixed(2)} dy=${dy.toFixed(2)} scale=${scale.toExponential(4)}`);
+            }
+
             this.dragStartX = p.x;
             this.dragStartY = p.y;
             this.render();
@@ -568,6 +641,14 @@ class MandelbrotViewer {
         const needsCpu = (this.zoom >= this.cpuFallbackZoom);
         this.isCpuMode = needsCpu;
         this.isHighPrecisionCpuActive = needsCpu && this.shouldUseHighPrecisionCpu();
+
+        if (this.debugEnabled) {
+            this.debugLogZoom('render()', {
+                needsCpu,
+                highPrecision: this.isHighPrecisionCpuActive,
+                isInteracting: this.isInteracting,
+            });
+        }
 
         if (!needsCpu) {
             this.cancelCpuRender();

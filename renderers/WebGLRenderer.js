@@ -78,10 +78,10 @@ export class WebGLRenderer extends Renderer {
 
             void main() {
                 float scale = 4.0 / (u_resolution.x * u_zoomBase);
-                scale *= u_zoomResidual;
+                scale /= u_zoomResidual;
                 vec2 baseCoord = vec2(
                     u_center.x + ((gl_FragCoord.x - 0.5) - 0.5 * u_resolution.x) * scale,
-                    u_center.y + (0.5 * u_resolution.y - (gl_FragCoord.y - 0.5)) * scale
+                    u_center.y + ((gl_FragCoord.y - 0.5) - 0.5 * u_resolution.y) * scale
                 );
                 vec2 c = baseCoord + u_centerResidual;
 
